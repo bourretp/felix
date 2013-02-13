@@ -159,8 +159,6 @@ public final class ConstructorInvocationContext {
           "ConstructorInvocationContext.proceed() called multiple times");
     }
 
-    System.out.println("====> INSTANCE.proceed(" + m_currentPosition + ")");
-
     if (m_currentPosition == m_chain.size()) {
       // No more interceptors
       return doProceed();
@@ -169,14 +167,6 @@ public final class ConstructorInvocationContext {
     // Get the next interceptor to call
     ConstructorInterceptor next = m_chain.get(m_currentPosition);
     m_currentPosition++;
-
-    System.out.println("====>                  next=" + next);
-    if (next instanceof Property) {
-      System.out.println("====>                    |index="
-          + ((Property) next).getParameterIndex());
-      System.out.println("====>                    |type="
-          + ((Property) next).getType());
-    }
 
     // Call the interceptor
     next.onConstructorCall(this);
@@ -233,18 +223,9 @@ public final class ConstructorInvocationContext {
     List<Constructor> ctors = new ArrayList<Constructor>(
         Arrays.asList(m_manager.getClazz().getDeclaredConstructors()));
 
-    // DEBUG
-    System.out.println("====> INSTANCE=" + m_manager.getInstanceName());
-    System.out.println("====> PARAMS=" + m_params.toString());
-    for (Constructor c : ctors) {
-      System.out.println("  ==> CTOR=" + c.toString());
-    }
-
     // Filter out incompatible constructors.
     for (Iterator<Constructor> i = ctors.iterator(); i.hasNext();) {
 
-      // DEBUG
-      System.out.println("  __________");
 
       Constructor ctor = i.next();
       Class[] ctorParamTypes = ctor.getParameterTypes();
@@ -253,7 +234,6 @@ public final class ConstructorInvocationContext {
       // AND First parameter MUST be the instance manager.
       if (ctorParamTypes.length <= m_params.size()
           || ctorParamTypes[0] != InstanceManager.class) {
-        System.out.println("    Discarding " + ctor);
         i.remove();
         continue;
       }
@@ -268,7 +248,6 @@ public final class ConstructorInvocationContext {
       // Check parameters are compatible with constructor expected ones.
       for (int j = 0; j < ctorParamTypes.length; j++) {
         if (!Property.isAssignable(ctorParamTypes[j], params.get(j))) {
-          System.out.println("    Discarding " + ctor);
           i.remove();
           continue;
         }
@@ -299,13 +278,11 @@ public final class ConstructorInvocationContext {
     // Handle BundleContext injection.
     for (int j = 0; j < ctorParamTypes.length; j++) {
       if (ctorParamTypes[j] == BundleContext.class && m_params.get(j) == null) {
-        System.out.println("    --> injecting bundle context in param" + j + "]: " + m_manager.getContext());
         m_params.set(j, m_manager.getContext());
         break;
       }
     }
 
-    System.out.println("  ==> FOUND=" + ctors.get(0).toString());
     return ctor;
   }
 
