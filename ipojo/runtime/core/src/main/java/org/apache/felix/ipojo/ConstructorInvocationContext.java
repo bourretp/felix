@@ -22,6 +22,7 @@ import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -31,7 +32,6 @@ import org.apache.felix.ipojo.parser.MethodMetadata;
 import org.apache.felix.ipojo.util.Logger;
 import org.apache.felix.ipojo.util.Property;
 import org.osgi.framework.BundleContext;
-import org.osgi.framework.BundleEvent;
 
 /**
  * Invocation context during a POJO construction.
@@ -72,10 +72,6 @@ public final class ConstructorInvocationContext {
    * The constructed POJO. {@code null} before the POJO is created.
    */
   private Object m_pojo = null;
-
-  // m_params[0] is always the InstanceManager, and is unmodifiable.
-  // m_params[1] may be the BundleContext, and if so, is unmodifiable.
-  // The remaining elements are unspecified
 
   /**
    * The list of the parameters for the POJO constructor.
@@ -154,7 +150,7 @@ public final class ConstructorInvocationContext {
    *           if the constructor has thrown an exception.
    */
   public Object proceed() throws Throwable {
-    if (m_pojo != null) {
+    if (m_pojo != null && m_doCallConstructor) {
       throw new IllegalStateException(
           "ConstructorInvocationContext.proceed() called multiple times");
     }
@@ -224,15 +220,14 @@ public final class ConstructorInvocationContext {
         Arrays.asList(m_manager.getClazz().getDeclaredConstructors()));
 
     // Filter out incompatible constructors.
-    for (Iterator<Constructor> i = ctors.iterator(); i.hasNext();) {
-
+    next_ctor: for (Iterator<Constructor> i = ctors.iterator(); i.hasNext();) {
 
       Constructor ctor = i.next();
       Class[] ctorParamTypes = ctor.getParameterTypes();
 
       // Number of parameters must at least size of m_params.
       // AND First parameter MUST be the instance manager.
-      if (ctorParamTypes.length <= m_params.size()
+      if (ctorParamTypes.length < m_params.size()
           || ctorParamTypes[0] != InstanceManager.class) {
         i.remove();
         continue;
@@ -249,7 +244,7 @@ public final class ConstructorInvocationContext {
       for (int j = 0; j < ctorParamTypes.length; j++) {
         if (!Property.isAssignable(ctorParamTypes[j], params.get(j))) {
           i.remove();
-          continue;
+          continue next_ctor;
         }
       }
     }
@@ -260,15 +255,30 @@ public final class ConstructorInvocationContext {
       throw new NoSuchMethodException();
     } else if (ctors.size() > 1) {
       // Ambiguous constructor invocation!
-      m_manager.getLogger().log(Logger.WARNING,
-          "Multiple constructors match for parameters " + m_params.toString());
-      for (Constructor c : ctors) {
-        m_manager.getLogger().log(Logger.WARNING, "  " + c.toString());
-      }
+
+      // Try to sort the candidates according to the expected parameter number.
+      // The less parameters are, the best the constructor is.
+      // The sort method do not modify order of "equals" elements, so the
+      // constructor declaration order is kept.
+      int ref = m_params.size();
+      Collections.sort(ctors, new Comparator<Constructor>() {
+        public int compare(Constructor c1, Constructor c2) {
+          return c1.getParameterTypes().length - c2.getParameterTypes().length;
+        }
+      });
+      
+      // Warn, because choosing a constructor and randomness are not so different.
+      m_manager.getLogger().log(
+          Logger.WARNING,
+          "Multiple constructors match for parameters " + m_params.toString()
+              + ": " + ctors);
     }
+
+    // At last, constructor has been chosen!!!!!
     Constructor ctor = ctors.get(0);
     
-    // Fill m_params with null values until the expected number of constructor
+    // Fill m_params with null values until the expected number of the chosen
+    // constructor
     // parameters is reached.
     Class[] ctorParamTypes = ctor.getParameterTypes();
     while (m_params.size() < ctorParamTypes.length) {

@@ -38,7 +38,6 @@ import org.apache.felix.ipojo.metadata.Element;
 import org.apache.felix.ipojo.parser.FieldMetadata;
 import org.apache.felix.ipojo.parser.MethodMetadata;
 import org.apache.felix.ipojo.util.Logger;
-import org.apache.felix.ipojo.util.Property;
 import org.osgi.framework.BundleContext;
 
 /**
@@ -121,7 +120,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * the constructors.
      * Once configured, this list can't change.
      */
-    private SortedMap /*<Integer,List<ConstructorInterceptor>>*/ m_constructorRegistration;
+    private final SortedMap /*<Integer,List<ConstructorInterceptor>>*/ m_constructorRegistration = new TreeMap();;
 
     /**
      * The manipulated class.
@@ -207,10 +206,13 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         m_factoryMethod = (String) metadata.getAttribute("factory-method");
 
         // Create the standard handlers and add these handlers to the list
+        // Also register them as constructor interceptor, with maximum priority.
+        // Handler level order is preserved.
+        List/*<ConstructorInterceptor>*/ handlers = new ArrayList();
         for (int i = 0; i < m_handlers.length; i++) {
             m_handlers[i].init(this, metadata, configuration);
+            register(Integer.MIN_VALUE, (PrimitiveHandler) m_handlers[i].getHandler());
         }
-        
     }
 
     /**
@@ -608,47 +610,19 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         if (m_factoryMethod == null) {
             // No factory-method, we use the constructor.
             try {
-                // Try to find the correct constructor.
-                if (m_constructorRegistration != null) {
+               
                     
-                    // Construct the interception chain for the constructor.
-                    List/*<ConstructorInterceptor>*/ chain = new ArrayList(m_constructorRegistration.size());
-                    for (Object o : m_constructorRegistration.values()) {
-                      chain.addAll((List) o);
-                    }
-                    
-                    // Construct the interception context.
-                    ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain);
-                    
-                    // Proceed to the POJO creation.
-                    instance = ctx.proceed();
-                    
-                } else {
-                    // Old semantic
-                    // Try to find if there is a constructor with a bundle context as parameter :
-                    try {
-                        Constructor cst = m_clazz.getDeclaredConstructor(new Class[] { InstanceManager.class, BundleContext.class });
-                        if (! cst.isAccessible()) {
-                            cst.setAccessible(true);
-                        }
-                        Object[] args = new Object[] { this, m_context };
-                        onEntry(null, MethodMetadata.BC_CONSTRUCTOR_ID,  new Object[] {m_context});
-                        instance = cst.newInstance(args);
-                        onExit(instance, MethodMetadata.BC_CONSTRUCTOR_ID, instance);
-                    } catch (NoSuchMethodException e) {
-                        // Create an instance if no instance are already created with <init>()BundleContext
-                        if (instance == null) {
-                            Constructor cst = m_clazz.getDeclaredConstructor(new Class[] { InstanceManager.class });
-                            if (! cst.isAccessible()) {
-                                cst.setAccessible(true);
-                            }
-                            Object[] args = new Object[] {this};
-                            onEntry(null, MethodMetadata.EMPTY_CONSTRUCTOR_ID, new Object[0]);
-                            instance = cst.newInstance(args);
-                            onExit(instance, MethodMetadata.EMPTY_CONSTRUCTOR_ID, instance);
-                        }
-                    }
+                // Construct the interception chain for the constructor.
+                List/*<ConstructorInterceptor>*/ chain = new ArrayList(m_constructorRegistration.size());
+                for (Object o : m_constructorRegistration.values()) {
+                  chain.addAll((List) o);
                 }
+                
+                // Construct the interception context.
+                ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain);
+                
+                // Proceed to the POJO creation.
+                instance = ctx.proceed();
 
             } catch (IllegalAccessException e) {
                 m_logger.log(Logger.ERROR,
@@ -688,6 +662,9 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             }
         } else {
             try {
+                
+                // XXX TODO XXX call constructor interceptors !!!
+                
                 // Build the pojo object with the factory-method.
                 Method factory = null;
                 // Try with the bundle context
@@ -901,16 +878,6 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
           }
         }
         
-
-//        // Call createInstance on Handlers :
-//        for (int i = 0; i < m_handlers.length; i++) {
-//            // This methods must be call without the monitor lock.
-//            ((PrimitiveHandler) m_handlers[i].getHandler()).onCreation(obj);
-//        }
-        // TODO
-//        throw new UnsupportedOperationException();
-
-
     }
 
     /**
@@ -1002,13 +969,14 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * */
     public void register(int priority, ConstructorInterceptor injector) throws ConfigurationException {
         Integer key = new Integer(priority);
-        if (m_constructorRegistration == null) {
-            m_constructorRegistration = new TreeMap();
+        List/*<ConstructorInterceptor>*/ list = (List) m_constructorRegistration.get(key);
+        if (list == null) {
+          list = new ArrayList(1);
+          list.add(injector);
+          m_constructorRegistration.put(key, list);
+        } else {
+          list.add(injector);
         }
-        if (! m_constructorRegistration.containsKey(key)) {
-            m_constructorRegistration.put(key, new ArrayList());
-        }
-        ((List) m_constructorRegistration.get(key)).add(injector);
     }
 
     /**
