@@ -35,7 +35,7 @@ import org.apache.felix.ipojo.util.Logger;
 * @author <a href="mailto:dev@felix.apache.org">Felix Project Team</a>
 */
 public abstract class PrimitiveHandler extends Handler implements FieldInterceptor, MethodInterceptor,
-    ConstructorInjector {
+    ConstructorInterceptor {
 
     /**
      * The "Primitive" Handler type (value).
@@ -165,7 +165,7 @@ public abstract class PrimitiveHandler extends Handler implements FieldIntercept
      * @param index the index of the parameter
      * @return the object to inject, or <code>null</code> if no
      * objects are injected. This implementation returns <code>null</code>
-     * @see org.apache.felix.ipojo.ConstructorInjector#getConstructorParameter(int)
+     * @see org.apache.felix.ipojo.ConstructorInterceptor#getConstructorParameter(int)
      */
     public Object getConstructorParameter(int index) {
         return null;
@@ -180,7 +180,7 @@ public abstract class PrimitiveHandler extends Handler implements FieldIntercept
      * @param index the parameter index
      * @return the Class object (must fit for primitive type), this implementation
      * just returns <code>null</code>
-     * @see org.apache.felix.ipojo.ConstructorInjector#getConstructorParameterType(int)
+     * @see org.apache.felix.ipojo.ConstructorInterceptor#getConstructorParameterType(int)
      */
     public Class getConstructorParameterType(int index) {
         return null;
@@ -248,10 +248,9 @@ public abstract class PrimitiveHandler extends Handler implements FieldIntercept
      * The default implementation does nothing.
      * @param instance the created instance
      */
-    public void onCreation(Object instance) {
-        // Nothing to do in the default implementation
+    public void onConstructorCall(ConstructorInvocationContext context) throws Throwable {
+      // Default implementation
+      context.proceed();
     }
-
-
 
 }

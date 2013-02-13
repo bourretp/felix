@@ -34,7 +34,8 @@ import java.util.Set;
 import java.util.Vector;
 
 import org.apache.felix.ipojo.ConfigurationException;
-import org.apache.felix.ipojo.ConstructorInjector;
+import org.apache.felix.ipojo.ConstructorInterceptor;
+import org.apache.felix.ipojo.ConstructorInvocationContext;
 import org.apache.felix.ipojo.FieldInterceptor;
 import org.apache.felix.ipojo.InstanceManager;
 import org.apache.felix.ipojo.MethodInterceptor;
@@ -51,7 +52,7 @@ import org.osgi.framework.ServiceReference;
  * @author <a href="mailto:dev@felix.apache.org">Felix Project Team</a>
  */
 public class Dependency extends DependencyModel implements FieldInterceptor, MethodInterceptor,
-    ConstructorInjector {
+    ConstructorInterceptor {
 
     /**
      * Reference on the Dependency Handler.
@@ -1016,7 +1017,7 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
         }
 
     }
-
+    
     /**
      * Gets the constructor parameter.
      * @return the index of the constructor parameter,
@@ -1026,42 +1027,13 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
         return m_index;
     }
 
-    /**
-     * Gets the object to inject in the constructor parameter.
-     * @param index the index of the parameter
-     * @return the created proxy object
-     * @see org.apache.felix.ipojo.ConstructorInjector#getConstructorParameter(int)
-     */
-    public Object getConstructorParameter(int index) {
-        if (m_index == index  && m_proxyObject != null) {
-            return m_proxyObject;
-        }
-        return null;
-    }
-
-    /**
-     * Gets the type of the constructor parameter.
-     * @param index the parameter index
-     * @return the class of the object. For scalar dependency, it's the
-     * specification, for aggregate it depends of the container object:
-     * {@link List} or {@link Set}.
-     * @see org.apache.felix.ipojo.ConstructorInjector#getConstructorParameterType(int)
-     */
-    public Class getConstructorParameterType(int index) {
-        if (m_index == index  && m_proxyObject != null) {
-            if (isAggregate()) {
-                switch (m_type) {
-                case DependencyHandler.LIST: return List.class;
-                case DependencyHandler.SET : return Set.class;
-                //TODO We should also manage the Collection type.
-                default: return null; // Should never happen, it was checked before.
-                }
-            } else {
-                return getSpecification();
-            }
-        } else {
-            return null;
-        }
+    public void onConstructorCall(ConstructorInvocationContext context)
+        throws Throwable {
+      
+      if (m_index != -1 && m_proxyObject != null) {
+        context.getParameters().set(m_index, m_proxyObject);
+      }
+      context.proceed();
     }
 
 }

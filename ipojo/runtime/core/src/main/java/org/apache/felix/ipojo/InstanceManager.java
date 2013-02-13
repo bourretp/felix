@@ -23,7 +23,15 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 
 import org.apache.felix.ipojo.architecture.InstanceDescription;
 import org.apache.felix.ipojo.metadata.Element;
@@ -109,11 +117,11 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
     private Map m_methodRegistration;
 
     /**
-     * the map (sorted by parameter index) or {@link ConstructorInjector} interested by
-     * injecting constructor parameter.
+     * the map (sorted by priority) of {@link ConstructorInterceptor}s interested by
+     * the constructors.
      * Once configured, this list can't change.
      */
-    private Map m_constructorRegistration;
+    private SortedMap /*<Integer,List<ConstructorInterceptor>>*/ m_constructorRegistration;
 
     /**
      * The manipulated class.
@@ -203,82 +211,6 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             m_handlers[i].init(this, metadata, configuration);
         }
         
-        // Fix for Felix-3576
-        handleBCInjections();
-
-        // Check that the constructor parameter are continuous.
-        if (m_constructorRegistration != null) {
-            for (int i = 0; i < m_constructorRegistration.size(); i++) {
-                if (! m_constructorRegistration.containsKey(new Integer(i))) {
-                    throw new ConfigurationException("The constructor parameter " + i + " is not managed");
-                }
-            }
-        }
-    }
-    
-    /**
-     * BundleContext injection is not registered with the InstanceManager.
-     * We're iterating through factory's all constructors and register first
-     * BundleContext parameter as constructor injection. So rest of the code
-     * don't have to do anything to handle BundleContext mixed with other
-     * injections.
-     * 
-     * @throws ConfigurationException
-     */
-    private void handleBCInjections() throws ConfigurationException
-    {
-        MethodMetadata[] constructors = getFactory().getPojoMetadata().getConstructors();
-        for(int i=0; i < constructors.length; i++ )
-        {
-        	String[] ctorArguments = constructors[i].getMethodArguments();
-        	
-        	for(int index = 0; index < ctorArguments.length; index++ )
-        	{
-        		if(ctorArguments[index].equals(BundleContext.class.getName()))
-        		{
-        			//Check if its used with only other injections.
-        			boolean injectionsConsistent = true;
-        			for(int siblingIndex = 0; siblingIndex < ctorArguments.length; siblingIndex++)
-        			{
-        				if(siblingIndex == index){
-        					continue;
-        				}
-        				
-        				String injectionType = ctorArguments[siblingIndex];
-        				if(m_constructorRegistration.containsKey(new Integer(siblingIndex)))
-        				{
-        					ConstructorInjector siblingInjector = 
-        							(ConstructorInjector)m_constructorRegistration.get(new Integer(siblingIndex));
-        					Class injectorClass = siblingInjector.getConstructorParameterType(siblingIndex);
-        					
-        					if(injectorClass != null && ! injectorClass.getName().equals(injectionType))
-        					{
-        						injectionsConsistent = false;
-        						break;
-        					}
-        				}
-        				else
-        				{
-        					injectionsConsistent = false;
-        					break;
-        				}
-        			}
-        			
-        			if(injectionsConsistent)
-        			{
-        				Property contextInjection = 
-            					new Property("__context", null, null, index, null, 
-            							BundleContext.class.getName(), this, null);
-            			
-            			contextInjection.setValue(getContext());        			
-            			register(index, contextInjection);
-            			
-            			// We register the first valid BC injection.
-            			break;
-        			}
-        		}
-        	}
-        }
     }
 
     /**
@@ -678,36 +610,19 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             try {
                 // Try to find the correct constructor.
                 if (m_constructorRegistration != null) {
-                    // Initialize the injected values and types
-                    // We have the IM first.
-                    Object[] values = new Object[m_constructorRegistration.size() + 1];
-                    Class[] types = new Class[m_constructorRegistration.size() + 1];
-                    values[0] = this;
-                    types[0] = InstanceManager.class;
-
-                    // Iterate over the constructor injector
-                    for (int i = 0; i < m_constructorRegistration.size(); i++) {
-                        ConstructorInjector injector = (ConstructorInjector)
-                            m_constructorRegistration.get(new Integer(i));
-                        Object v = injector.getConstructorParameter(i);
-                        if (v != null) {
-                            values[i + 1] = v;
-                            Class t = injector.getConstructorParameterType(i);
-                            if (t == null) {
-                                t = v.getClass();
-                            }
-                            types[i + 1] = t;
-                        }
+                    
+                    // Construct the interception chain for the constructor.
+                    List/*<ConstructorInterceptor>*/ chain = new ArrayList(m_constructorRegistration.size());
+                    for (Object o : m_constructorRegistration.values()) {
+                      chain.addAll((List) o);
                     }
-                    // Find the constructor.
-                    Constructor cst = m_clazz.getDeclaredConstructor(types);
-                    if (! cst.isAccessible()) {
-                        cst.setAccessible(true);
-                    }
-                    String methodId = MethodMetadata.computeMethodId(cst);
-                    onEntry(null, methodId,  values);
-                    instance = cst.newInstance(values);
-                    onExit(instance, methodId, instance);
+                    
+                    // Construct the interception context.
+                    ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain);
+                    
+                    // Proceed to the POJO creation.
+                    instance = ctx.proceed();
+                    
                 } else {
                     // Old semantic
                     // Try to find if there is a constructor with a bundle context as parameter :
@@ -878,11 +793,6 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             }
             m_pojoObjects.add(instance);
         }
-        // Call createInstance on Handlers :
-        for (int i = 0; i < m_handlers.length; i++) {
-            // This methods must be call without the monitor lock.
-            ((PrimitiveHandler) m_handlers[i].getHandler()).onCreation(instance);
-        }
 
         return instance;
     }
@@ -929,14 +839,6 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             }
         }
 
-        // Call createInstance on Handlers :
-        for (int i = 0; newPOJO && i < m_handlers.length; i++) {
-            ((PrimitiveHandler) m_handlers[i].getHandler()).onCreation(pojo);
-        }
-        //NOTE this method allows returning a POJO object before calling the onCreation on handler:
-        // a second thread get the created object before the first one (which created the object),
-        // call onCreation.
-
         return pojo;
     }
 
@@ -979,12 +881,34 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             // If anything wrong happened...
             throw new RuntimeException("Cannot attach the injected object with the container of " + m_name + " : " + e.getMessage());
         }
-
-        // Call createInstance on Handlers :
-        for (int i = 0; i < m_handlers.length; i++) {
-            // This methods must be call without the monitor lock.
-            ((PrimitiveHandler) m_handlers[i].getHandler()).onCreation(obj);
+        
+        
+        // Call constructor interceptors even if no actual constructor has been called.
+        if (m_constructorRegistration != null) {
+          List/*<ConstructorInterceptor>*/ chain = new ArrayList(m_constructorRegistration.size());
+          for (Object o : m_constructorRegistration.values()) {
+            chain.addAll((List) o);
+          }
+          
+          // Construct the interception context.
+          ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain, obj);
+          
+          // Proceed to the POJO creation.
+          try {
+            ctx.proceed();
+          } catch (Throwable e) {
+            m_logger.log(Logger.ERROR, "Error in constructor interception chain", e);
+          }
         }
+        
+
+//        // Call createInstance on Handlers :
+//        for (int i = 0; i < m_handlers.length; i++) {
+//            // This methods must be call without the monitor lock.
+//            ((PrimitiveHandler) m_handlers[i].getHandler()).onCreation(obj);
+//        }
+        // TODO
+//        throw new UnsupportedOperationException();
 
 
     }
@@ -1069,25 +993,22 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
 
     /**
      * Registers a constructor injector.
-     * The constructor injector will be called when a pojo object is going to be
-     * created.
-     * @param index the index of the parameter. Only one injector per index can
-     * be registered.
+     * The constructor injector will be called when a pojo object is going to be created.
+     * If two interceptors have the same priority, then registration order takes precedence.
+     * 
+     * @param priority the priority of the injector.
      * @param injector the injector object.
-     * @throws ConfigurationException if the given index is already injected by another
-     * injector
-     */
-    public void register(int index, ConstructorInjector injector) throws ConfigurationException {
-        Integer key = new Integer(index);
+     * @throws ConfigurationException if the given index is already injected by another injector
+     * */
+    public void register(int priority, ConstructorInterceptor injector) throws ConfigurationException {
+        Integer key = new Integer(priority);
         if (m_constructorRegistration == null) {
-            m_constructorRegistration = new HashMap();
+            m_constructorRegistration = new TreeMap();
         }
         if (! m_constructorRegistration.containsKey(key)) {
-            m_constructorRegistration.put(key, injector);
-        } else {
-            throw new ConfigurationException("Another constructor injector " +
-                    "manages the parameter " + index);
+            m_constructorRegistration.put(key, new ArrayList());
         }
+        ((List) m_constructorRegistration.get(key)).add(injector);
     }
 
     /**

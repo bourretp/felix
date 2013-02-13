@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.Vector;
 
 import org.apache.felix.ipojo.ConfigurationException;
+import org.apache.felix.ipojo.ConstructorInvocationContext;
 import org.apache.felix.ipojo.IPojoContext;
 import org.apache.felix.ipojo.PolicyServiceContext;
 import org.apache.felix.ipojo.PrimitiveHandler;
@@ -638,7 +639,8 @@ public class DependencyHandler extends PrimitiveHandler implements DependencySta
      * @param instance : the created object
      * @see org.apache.felix.ipojo.PrimitiveHandler#onCreation(Object)
      */
-    public void onCreation(Object instance) {
+    public void onConstructorCall(ConstructorInvocationContext context) throws Throwable {
+        Object instance = context.proceed();
         for (int i = 0; i < m_dependencies.length; i++) {
             m_dependencies[i].onObjectCreation(instance);
         }

@@ -25,7 +25,8 @@ import java.lang.reflect.Method;
 
 import org.apache.felix.ipojo.ComponentInstance;
 import org.apache.felix.ipojo.ConfigurationException;
-import org.apache.felix.ipojo.ConstructorInjector;
+import org.apache.felix.ipojo.ConstructorInterceptor;
+import org.apache.felix.ipojo.ConstructorInvocationContext;
 import org.apache.felix.ipojo.FieldInterceptor;
 import org.apache.felix.ipojo.Handler;
 import org.apache.felix.ipojo.InstanceManager;
@@ -38,7 +39,7 @@ import org.osgi.framework.BundleContext;
  * and constructor injection.
  * @author <a href="mailto:dev@felix.apache.org">Felix Project Team</a>
  */
-public class Property implements FieldInterceptor, ConstructorInjector {
+public class Property implements FieldInterceptor, ConstructorInterceptor {
 
     /**
      * Object used for an unvalued property.
@@ -644,40 +645,27 @@ public class Property implements FieldInterceptor, ConstructorInjector {
     }
 
     /**
-     * Gets the object to inject as constructor parameter.
-     * @param index the constructor parameter index
-     * @return the object to inject, so the property value.
-     * @see org.apache.felix.ipojo.ConstructorInjector#getConstructorParameter(int)
-     */
-    public Object getConstructorParameter(int index) {
-        if (m_index != index) {
-            return null;
-        }
-
-        if (m_value  == NO_VALUE) {
-           return getNoValue(m_type);
-        }
-        return m_value;
-    }
-
-    /**
-     * Gets the type of the constructor parameter to inject.
-     * @param index the parameter index
-     * @return the Class of the property.
-     * @see org.apache.felix.ipojo.ConstructorInjector#getConstructorParameterType(int)
-     */
-    public Class getConstructorParameterType(int index) {
-        if (m_index != index) {
-            return null;
-        }
-        return m_type;
-    }
-
-    /**
      * Gets the handler managing the property.
      * @return the configuration handler.
      */
     public Handler getHandler() {
         return m_handler;
     }
+
+    public void onConstructorCall(ConstructorInvocationContext context)
+          throws Throwable {
+        if (m_index != -1) {
+          Object value;
+          if (m_value  == NO_VALUE) {
+            value = getNoValue(m_type);
+          } else {
+            value = m_value;
+          }
+          while (m_index >= context.getParameters().size()) {
+            context.getParameters().add(null);
+          }
+          context.getParameters().set(m_index, value);
+        }
+        context.proceed();
+      }
 }

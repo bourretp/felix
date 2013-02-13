@@ -23,6 +23,7 @@ import java.util.Dictionary;
 import java.util.List;
 
 import org.apache.felix.ipojo.metadata.Element;
+import org.apache.felix.ipojo.util.Logger;
 import org.osgi.framework.BundleContext;
 
 /**
@@ -127,11 +128,20 @@ public class HandlerManager extends InstanceManager {
             m_handlers[i].start();
         }
 
-        // Call the onCreation method.
+        // Call the ConstructorInterceptors for the created handler.
+        List/*<ConstructorInterceptor>*/ chain = new ArrayList();
         for (int i = 0; i < m_handlers.length; i++) {
-            ((PrimitiveHandler) m_handlers[i].getHandler()).onCreation(m_handler);
+          chain.add((PrimitiveHandler) m_handlers[i].getHandler());
         }
-
+        // Construct the interception context.
+        ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain, m_handler);
+        
+        // Proceed to the POJO creation.
+        try {
+          ctx.proceed();
+        } catch (Throwable e) {
+          getLogger().log(Logger.ERROR, "Error in constructor interception chain", e);
+        }
 
         m_handler.start(); // Call the handler start method, the instance might be invalid.
 

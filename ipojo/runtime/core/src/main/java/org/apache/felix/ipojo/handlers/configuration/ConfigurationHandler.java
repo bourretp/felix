@@ -21,6 +21,7 @@ package org.apache.felix.ipojo.handlers.configuration;
 import java.util.*;
 
 import org.apache.felix.ipojo.ConfigurationException;
+import org.apache.felix.ipojo.ConstructorInvocationContext;
 import org.apache.felix.ipojo.HandlerFactory;
 import org.apache.felix.ipojo.PrimitiveHandler;
 import org.apache.felix.ipojo.architecture.ComponentTypeDescription;
@@ -501,7 +502,8 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
      * @param instance : the created object
      * @see org.apache.felix.ipojo.PrimitiveHandler#onCreation(Object)
      */
-    public void onCreation(Object instance) {
+    public void onConstructorCall(ConstructorInvocationContext context) throws Throwable {
+        Object instance = context.proceed();
         for (int i = 0; i < m_configurableProperties.size(); i++) {
             Property prop = (Property) m_configurableProperties.get(i);
             if (prop.hasMethod()) {
