@@ -24,6 +24,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Dictionary;
 import java.util.HashMap;
 import java.util.Hashtable;
@@ -617,6 +618,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                 for (Object o : m_constructorRegistration.values()) {
                   chain.addAll((List) o);
                 }
+                Collections.reverse(chain);
                 
                 // Construct the interception context.
                 ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain);
@@ -866,6 +868,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
           for (Object o : m_constructorRegistration.values()) {
             chain.addAll((List) o);
           }
+          Collections.reverse(chain);
           
           // Construct the interception context.
           ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain, obj);

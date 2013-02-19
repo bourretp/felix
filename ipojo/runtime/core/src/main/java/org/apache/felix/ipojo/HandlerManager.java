@@ -19,6 +19,7 @@
 package org.apache.felix.ipojo;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Dictionary;
 import java.util.List;
 
@@ -133,6 +134,8 @@ public class HandlerManager extends InstanceManager {
         for (int i = 0; i < m_handlers.length; i++) {
           chain.add((PrimitiveHandler) m_handlers[i].getHandler());
         }
+        Collections.reverse(chain);
+        
         // Construct the interception context.
         ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain, m_handler);
         
