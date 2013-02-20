@@ -1027,11 +1027,21 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                 m_fields.put(fieldName, result);
             }
             // Call onset outside of a synchronized block.
+            
             for (int i = 0; list != null && i < list.length; i++) {
                 list[i].onSet(null, fieldName, result);
             }
         }
         return result;
+    }
+    
+    // Used by FieldInvocationContext.proceed()
+    void doSetField(Object pojo, Field field, Object value) throws IllegalAccessException {
+        m_fields.put(field.getName(), value);
+        if (!field.isAccessible()) {
+            field.setAccessible(true);
+        }
+        field.set(pojo, value);
     }
 
     /**

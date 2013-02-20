@@ -45,5 +45,7 @@ public interface FieldInterceptor {
      * @return the managed value of the field
      */
     Object onGet(Object pojo, String fieldName, Object value);
+    
+    void onFieldAccess(FieldInvocationContext context, Object valueToSet);
 
 }
