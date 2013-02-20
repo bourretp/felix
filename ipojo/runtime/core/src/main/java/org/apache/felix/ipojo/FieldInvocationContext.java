@@ -151,7 +151,7 @@ public final class FieldInvocationContext {
       }
 
     } else {
-      // No more interceptors
+      // No more interceptors : cache and set final value. 
       m_finalValue = value;
       m_manager.doSetField(m_pojo, m_field, m_finalValue);
     }

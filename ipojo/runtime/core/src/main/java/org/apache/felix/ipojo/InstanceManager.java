@@ -24,6 +24,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Dictionary;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 
+import org.apache.felix.ipojo.FieldInvocationContext.Type;
 import org.apache.felix.ipojo.architecture.InstanceDescription;
 import org.apache.felix.ipojo.metadata.Element;
 import org.apache.felix.ipojo.parser.FieldMetadata;
@@ -997,46 +999,53 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         synchronized (this) { // Stack confinement.
             initialValue = m_fields.get(fieldName);
         }
-        Object result = initialValue;
-        boolean hasChanged = false;
-        // Get the list of registered handlers
+        Object result;
+        
+        // Construct the interception chain for the field access.
         FieldInterceptor[] list = (FieldInterceptor[]) m_fieldRegistration.get(fieldName); // Immutable list.
-        for (int i = 0; list != null && i < list.length; i++) {
-            // Call onGet outside of a synchronized block.
-            Object handlerResult = list[i].onGet(null, fieldName, initialValue);
-            if (handlerResult == initialValue) {
-                continue; // Non-binding case (default implementation).
-            } else {
-                if (result != initialValue) {
-                    //TODO analyze impact of removing conflict detection
-                    if ((handlerResult != null && !handlerResult.equals(result)) || (result != null && handlerResult == null)) {
-                        m_logger.log(
-                                                  Logger.WARNING,
-                                                  "A conflict was detected on the injection of "
-                                                          + fieldName);
-                    }
-                }
-                result = handlerResult;
-                hasChanged = true;
-            }
+        List<FieldInterceptor> chain = new ArrayList<FieldInterceptor>(Arrays.asList(list));
+        Collections.reverse(chain);
+        
+        // Construct the interception context.
+        FieldInvocationContext ctx = new FieldInvocationContext(this, chain, pojo, Type.READ);
+        
+        // Proceed to the field read access.
+        try {
+            result = ctx.proceed(initialValue);
+        } catch (Throwable e) {
+            // Catch every other possible error and runtime exception.
+            m_logger.log(Logger.ERROR,
+                    "[" + m_name + "] onGet -> The FieldInterceptor chain has failed : " + e.getMessage(), e);
+            stop();
+            throw new RuntimeException("Cannot GET POJO field value, the FieldInterceptor chain has thrown an exception : " + e.getMessage());
         }
-        if (hasChanged) {
-            // A change occurs => notify the change
-            //TODO consider just changing the reference, however multiple thread can be an issue
-            synchronized (this) {
-                m_fields.put(fieldName, result);
-            }
-            // Call onset outside of a synchronized block.
+        
+        // The actual field value has been changed by the interception chain.
+        // Current handler design forces to call onSet so they are notified of the
+        // new injected value. It may be a good idea to :
+        // TODO change handler design for onSet of injected values.
+        if (initialValue != result) {
             
-            for (int i = 0; list != null && i < list.length; i++) {
-                list[i].onSet(null, fieldName, result);
+            // Construct the interception context.
+            // The interception chain is _exactly_ the same.
+            FieldInvocationContext ctx2 = new FieldInvocationContext(this, chain, pojo, Type.WRITE);
+            
+            try {
+                ctx2.proceed(initialValue);
+            } catch (Throwable e) {
+                // Catch every other possible error and runtime exception.
+                m_logger.log(Logger.ERROR,
+                        "[" + m_name + "] onGet -> The FieldInterceptor chain has failed : " + e.getMessage(), e);
+                stop();
+                throw new RuntimeException("Cannot get POJO field value, the FieldInterceptor chain has thrown an exception : " + e.getMessage());
             }
+            
         }
         return result;
     }
     
     // Used by FieldInvocationContext.proceed()
-    void doSetField(Object pojo, Field field, Object value) throws IllegalAccessException {
+    synchronized void doSetField(Object pojo, Field field, Object value) throws IllegalAccessException {
         m_fields.put(field.getName(), value);
         if (!field.isAccessible()) {
             field.setAccessible(true);
@@ -1166,20 +1175,26 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * @param objectValue the new value of the field
      */
     public void onSet(final Object pojo, final String fieldName, final Object objectValue) {
-        synchronized (this) {
-            // First, store the new value.
-            // This must be done in a synchronized block to avoid
-            // concurrent modification
-            m_fields.put(fieldName, objectValue);
+        
+        // Construct the interception chain for the field access.
+        FieldInterceptor[] list = (FieldInterceptor[]) m_fieldRegistration.get(fieldName); // Immutable list.
+        List<FieldInterceptor> chain = new ArrayList<FieldInterceptor>(Arrays.asList(list));
+        Collections.reverse(chain);
+        
+        // Construct the interception context.
+        FieldInvocationContext ctx = new FieldInvocationContext(this, chain, pojo, Type.WRITE);
+        
+        // Proceed to the field read access.
+        try {
+            ctx.proceed(objectValue);
+        } catch (Throwable e) {
+            // Catch every other possible error and runtime exception.
+            m_logger.log(Logger.ERROR,
+                    "[" + m_name + "] onSet -> The FieldInterceptor chain has failed : " + e.getMessage(), e);
+            stop();
+            throw new RuntimeException("Cannot SET POJO field value, the FieldInterceptor chain has thrown an exception : " + e.getMessage());
         }
-        // The registrations cannot be modified, so we can directly access
-        // the interceptor list.
-        FieldInterceptor[] list = (FieldInterceptor[]) m_fieldRegistration
-                .get(fieldName);
-        for (int i = 0; list != null && i < list.length; i++) {
-             // The callback must be call outside the synchronization block.
-            list[i].onSet(null, fieldName, objectValue);
-        }
+        
     }
 
 
