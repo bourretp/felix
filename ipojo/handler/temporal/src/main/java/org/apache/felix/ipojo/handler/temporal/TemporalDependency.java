@@ -24,6 +24,7 @@ import java.util.Collection;
 import java.util.List;
 
 import org.apache.felix.ipojo.FieldInterceptor;
+import org.apache.felix.ipojo.FieldInvocationContext;
 import org.apache.felix.ipojo.MethodInterceptor;
 import org.apache.felix.ipojo.Nullable;
 import org.apache.felix.ipojo.PrimitiveHandler;
@@ -163,6 +164,17 @@ public class TemporalDependency extends DependencyModel implements
      * @see org.apache.felix.ipojo.util.DependencyModel#onServiceDeparture(org.osgi.framework.ServiceReference)
      */
     public void onServiceModification(ServiceReference arg0) {  }
+    
+    public void onFieldAccess(FieldInvocationContext context, Object value)
+        throws Throwable {
+        if (context.getType() == org.apache.felix.ipojo.FieldInvocationContext.Type.READ) {
+            context.proceed(onGet(context.getPojo(), context.getField().getName(), value));
+        } else {
+            // Type.WRITE
+          context.proceed(value);
+        }
+      
+    }  
 
     /**
      * The code require a value of the monitored field. If providers are
@@ -175,7 +187,7 @@ public class TemporalDependency extends DependencyModel implements
      * @return the object to inject.
      * @see org.apache.felix.ipojo.FieldInterceptor#onGet(java.lang.Object, java.lang.String, java.lang.Object)
      */
-    public synchronized Object onGet(Object arg0, String arg1, Object arg2) {
+    private synchronized Object onGet(Object arg0, String arg1, Object arg2) {
         // Check if the Thread local as a value
         if (! m_proxy) {
             Usage usage = (Usage) m_usage.get();
@@ -455,15 +467,6 @@ public class TemporalDependency extends DependencyModel implements
     }
 
     /**
-     * The monitored field receives a value. Nothing to do.
-     * @param arg0 POJO setting the value.
-     * @param arg1 field name
-     * @param arg2 received value
-     * @see org.apache.felix.ipojo.FieldInterceptor#onSet(java.lang.Object, java.lang.String, java.lang.Object)
-     */
-    public void onSet(Object arg0, String arg1, Object arg2) { }
-
-    /**
      * Implements the timeout policy according to the specified configuration.
      * @return the object to return when the timeout occurs.
      */
@@ -549,7 +552,6 @@ public class TemporalDependency extends DependencyModel implements
                 return m_handlerCL.loadClass(name);
             }
         }
-    }  
-    
+    }
 
 }

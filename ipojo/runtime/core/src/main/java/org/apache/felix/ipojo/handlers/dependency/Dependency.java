@@ -37,6 +37,8 @@ import org.apache.felix.ipojo.ConfigurationException;
 import org.apache.felix.ipojo.ConstructorInterceptor;
 import org.apache.felix.ipojo.ConstructorInvocationContext;
 import org.apache.felix.ipojo.FieldInterceptor;
+import org.apache.felix.ipojo.FieldInvocationContext;
+import org.apache.felix.ipojo.FieldInvocationContext.Type;
 import org.apache.felix.ipojo.InstanceManager;
 import org.apache.felix.ipojo.MethodInterceptor;
 import org.apache.felix.ipojo.Nullable;
@@ -617,7 +619,8 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
 
         }
     }
-
+    
+    
     /**
      * This method is called by the replaced code in the component
      * implementation class. Construct the service object list is necessary.
@@ -641,9 +644,19 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
         } else {
             return m_proxyObject;
         }
-
     }
-
+    
+    public void onFieldAccess(FieldInvocationContext context, Object value)
+        throws Throwable {
+        if (context.getType() == Type.READ) {
+            context.proceed(onGet(context.getPojo(), context.getField().getName(), value));
+        } else {
+            // Type.WRITE
+            // Nothing to do.
+            context.proceed(value);
+        }
+      
+    }
 
     /**
      * Creates the object to store in the given Thread Local.
@@ -719,18 +732,6 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
                 }
             }
         }
-    }
-
-    /**
-     * The field was set.
-     * This method should not be call if the POJO is written correctly.
-     * @param pojo : POJO object
-     * @param fieldName : field name
-     * @param value : set value.
-     * @see org.apache.felix.ipojo.FieldInterceptor#onSet(java.lang.Object, java.lang.String, java.lang.Object)
-     */
-    public void onSet(Object pojo, String fieldName, Object value) {
-        // Nothing to do.
     }
 
     /**

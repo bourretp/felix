@@ -131,36 +131,6 @@ public abstract class PrimitiveHandler extends Handler implements FieldIntercept
     }
 
     /**
-     * Callback method called when a managed field
-     * receives a new value. The given pojo can be
-     * null if the new value is set by another handler.
-     * This default implementation does nothing.
-     * @param pojo the pojo object setting the value
-     * @param fieldName the field name
-     * @param value the value received by the field
-     * @see FieldInterceptor#onSet(Object, String, Object)
-     */
-    public void onSet(Object pojo, String fieldName, Object value) {
-        // Nothing to do in the default implementation
-    }
-
-    /**
-     * Callback method called when a managed field
-     * asks for a value.
-     * The default implementation returned the previously
-     * injected value.
-     * @param pojo the pojo object requiring the value
-     * @param fieldName the field name
-     * @param value the value passed to the field (by the previous call)
-     * @return the value to inject, of the previous value if the handler
-     * don't want to inject a value.
-     * @see FieldInterceptor#onGet(Object, String, Object)
-     */
-    public Object onGet(Object pojo, String fieldName, Object value) {
-        return value;
-    }
-
-    /**
      * Gets the object to inject as a constructor parameter
      * @param index the index of the parameter
      * @return the object to inject, or <code>null</code> if no
@@ -251,6 +221,11 @@ public abstract class PrimitiveHandler extends Handler implements FieldIntercept
     public void onConstructorCall(ConstructorInvocationContext context) throws Throwable {
       // Default implementation
       context.proceed();
+    }
+    
+    public void onFieldAccess(FieldInvocationContext context, Object value) throws Throwable {
+      // Default implementation
+      context.proceed(value);
     }
 
 }

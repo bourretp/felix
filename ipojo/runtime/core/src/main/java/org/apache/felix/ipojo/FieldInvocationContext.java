@@ -121,7 +121,12 @@ public final class FieldInvocationContext {
   public Field getField() {
     return m_field;
   }
-
+  
+  public Object getPojo() {
+    return m_pojo;
+  }
+  
+  
   /**
    * Call the next interceptor in the chain, or proceed to the field access.
    * 

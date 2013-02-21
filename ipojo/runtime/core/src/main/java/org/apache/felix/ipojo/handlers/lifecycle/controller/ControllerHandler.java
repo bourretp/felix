@@ -22,6 +22,8 @@ import java.util.Dictionary;
 
 import org.apache.felix.ipojo.ComponentInstance;
 import org.apache.felix.ipojo.ConfigurationException;
+import org.apache.felix.ipojo.FieldInvocationContext;
+import org.apache.felix.ipojo.FieldInvocationContext.Type;
 import org.apache.felix.ipojo.InstanceManager;
 import org.apache.felix.ipojo.PrimitiveHandler;
 import org.apache.felix.ipojo.architecture.ComponentTypeDescription;
@@ -87,33 +89,12 @@ public class ControllerHandler extends PrimitiveHandler {
         // Nothing to do.
     }
 
-
-
-    /**
-     * GetterCallback.
-     * @param pojo : the pojo object on which the field is accessed
-     * Return the stored value.
-     * @param field : field name.
-     * @param value : value given by the previous handler.
-     * @return : the handler state.
-     */
-    public Object onGet(Object pojo, String field, Object value) {
-        if (m_state) {
-            return Boolean.TRUE;
-        } else {
-            return Boolean.FALSE;
-        }
-    }
-
-    /**
-     * SetterCallback.
-     * @param pojo : the pojo object on which the field is accessed
-     * Store the new field value & invalidate / validate the handler is required.
-     * @param field : field name.
-     * @param value : new value.
-     */
-    public void onSet(Object pojo, String field, Object value) {
-        if (value instanceof Boolean) {
+    public void onFieldAccess(FieldInvocationContext context, Object value) throws Throwable {
+      if (context.getType() == Type.READ) {
+          Boolean state = Boolean.valueOf(m_state);
+          context.proceed(state);
+      } else {
+          if (value instanceof Boolean) {
             boolean newValue = ((Boolean) value).booleanValue();
             if (newValue != m_state) {
                 m_state = newValue;
@@ -125,10 +106,12 @@ public class ControllerHandler extends PrimitiveHandler {
                     setValidity(false);
                 }
             }
-        } else {
-            error("Boolean expected for the lifecycle controller");
-            getInstanceManager().stop();
-        }
+            context.proceed(value);
+          } else {
+              error("Boolean expected for the lifecycle controller");
+              getInstanceManager().stop();
+          }
+      }
     }
 
     /**

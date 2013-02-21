@@ -30,6 +30,8 @@ import java.util.Properties;
 
 import org.apache.felix.ipojo.ComponentInstance;
 import org.apache.felix.ipojo.ConfigurationException;
+import org.apache.felix.ipojo.FieldInvocationContext;
+import org.apache.felix.ipojo.FieldInvocationContext.Type;
 import org.apache.felix.ipojo.PrimitiveHandler;
 import org.apache.felix.ipojo.architecture.HandlerDescription;
 import org.apache.felix.ipojo.metadata.Attribute;
@@ -146,32 +148,16 @@ public class PropertiesHandler extends PrimitiveHandler {
         }
         m_properties = null;
     }
-
-    /**
-     * This method is called at each time the pojo 'get' a listened field. The method return the stored value.
-     * @param pojo : pojo object getting the field
-     * @param field : field name.
-     * @param o : previous value.
-     * @return the stored value.
-     * @see org.apache.felix.ipojo.PrimitiveHandler#getterCallback(java.lang.String, java.lang.Object)
-     */
-    public Object onGet(Object pojo, String field, Object o) {
-        // When the pojo requires a value for a managed field, this method is invoked.
-        // So, we have just to return the stored value.
-        return m_properties.get(field);
-    }
-
-    /**
-     * This method is called at each time the pojo 'set' a listened field. This method updates the local properties.
-     * @param pojo : pojo object setting the field
-     * @param field : field name
-     * @param newvalue : new value
-     * @see org.apache.felix.ipojo.PrimitiveHandler#setterCallback(java.lang.String, java.lang.Object)
-     */
-    public void onSet(Object pojo, String field, Object newvalue) {
-        // When the pojo set a value to a managed field, this method is invoked.
-        // So, we update the stored value.
-        m_properties.put(field, newvalue);
+    
+    public void onFieldAccess(FieldInvocationContext context, Object value) throws Throwable {
+        if (context.getType() == Type.READ) {
+            context.proceed(m_properties.get(context.getField().getName()));
+        } else {
+            m_properties.put(context.getField().getName(), value);
+            context.proceed(value);
+        }
+        // Default implementation
+        
     }
 
     /**

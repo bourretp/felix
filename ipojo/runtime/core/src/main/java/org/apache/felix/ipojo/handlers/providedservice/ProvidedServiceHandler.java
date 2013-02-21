@@ -26,6 +26,8 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.felix.ipojo.ConfigurationException;
+import org.apache.felix.ipojo.FieldInvocationContext;
+import org.apache.felix.ipojo.FieldInvocationContext.Type;
 import org.apache.felix.ipojo.HandlerFactory;
 import org.apache.felix.ipojo.InstanceManager;
 import org.apache.felix.ipojo.Pojo;
@@ -420,71 +422,58 @@ public class ProvidedServiceHandler extends PrimitiveHandler {
     public void start() {
         // Nothing to do.
     }
-
-    /**
-     * Setter Callback Method.
-     * Check if the modified field is a property to update the value.
-     * @param pojo : the pojo object on which the field is accessed
-     * @param fieldName : field name
-     * @param value : new value
-     * @see org.apache.felix.ipojo.Handler#onSet(Object,
-     * java.lang.String, java.lang.Object)
-     */
-    public void onSet(Object pojo, String fieldName, Object value) {
-        // Verify that the field name correspond to a dependency
-        for (int i = 0; i < m_providedServices.length; i++) {
-            ProvidedService svc = m_providedServices[i];
-            boolean update = false;
-            for (int j = 0; j < svc.getProperties().length; j++) {
-                Property prop = svc.getProperties()[j];
-                if (fieldName.equals(prop.getField()) && ! prop.getValue().equals(value)) {
-                    // it is the associated property
-                    prop.setValue(value);
-                    update = true;
+    
+    public void onFieldAccess(FieldInvocationContext context, Object value) throws Throwable {
+        String fieldName = context.getField().getName();
+        Object pojo = context.getPojo();
+        if (context.getType() == Type.READ) {
+            for (int i = 0; i < m_providedServices.length; i++) {
+                ProvidedService svc = m_providedServices[i];
+                for (int j = 0; j < svc.getProperties().length; j++) {
+                    Property prop = svc.getProperties()[j];
+                    if (fieldName.equals(prop.getField())) {
+                        // Manage the No Value case.
+                        context.proceed(prop.onGet(pojo, fieldName, value));
+                        return;
+                    }
+                }
+                ServiceController ctrl = svc.getController(fieldName);
+                if (ctrl != null) {
+                    context.proceed(new Boolean(ctrl.getValue()));
+                    return;
                 }
             }
-            if (update) {
-                svc.update();
-            }
-            ServiceController ctrl = svc.getController(fieldName);
-            if (ctrl != null) {
-                if (value instanceof Boolean) {
-                    ctrl.setValue((Boolean) value);
-                } else {
-                    warn("Boolean value expected for the service controler " + fieldName);
+            // Else it is not a property
+            context.proceed(value);
+        } else {
+            // Type.WRITE
+            // Verify that the field name correspond to a dependency
+            for (int i = 0; i < m_providedServices.length; i++) {
+                ProvidedService svc = m_providedServices[i];
+                boolean update = false;
+                for (int j = 0; j < svc.getProperties().length; j++) {
+                    Property prop = svc.getProperties()[j];
+                    if (fieldName.equals(prop.getField()) && ! prop.getValue().equals(value)) {
+                        // it is the associated property
+                        prop.setValue(value);
+                        update = true;
+                    }
+                }
+                if (update) {
+                    svc.update();
+                }
+                ServiceController ctrl = svc.getController(fieldName);
+                if (ctrl != null) {
+                    if (value instanceof Boolean) {
+                        ctrl.setValue((Boolean) value);
+                    } else {
+                        warn("Boolean value expected for the service controler " + fieldName);
+                    }
                 }
             }
+            // Else do nothing
+            context.proceed(value);
         }
-        // Else do nothing
-    }
-
-    /**
-     * Getter Callback Method.
-     * Check if the field is a property to push the stored value.
-     * @param pojo : the pojo object on which the field is accessed
-     * @param fieldName : field name
-     * @param value : value pushed by the previous handler
-     * @return the stored value or the previous value.
-     * @see org.apache.felix.ipojo.Handler#onGet(Object,
-     * java.lang.String, java.lang.Object)
-     */
-    public Object onGet(Object pojo, String fieldName, Object value) {
-        for (int i = 0; i < m_providedServices.length; i++) {
-            ProvidedService svc = m_providedServices[i];
-            for (int j = 0; j < svc.getProperties().length; j++) {
-                Property prop = svc.getProperties()[j];
-                if (fieldName.equals(prop.getField())) {
-                    // Manage the No Value case.
-                    return prop.onGet(pojo, fieldName, value);
-                }
-            }
-            ServiceController ctrl = svc.getController(fieldName);
-            if (ctrl != null) {
-                return new Boolean(ctrl.getValue());
-            }
-        }
-        // Else it is not a property
-        return value;
     }
 
     /**

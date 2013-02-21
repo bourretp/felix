@@ -13,6 +13,8 @@ import javax.transaction.TransactionManager;
 
 import org.apache.felix.ipojo.ComponentInstance;
 import org.apache.felix.ipojo.ConfigurationException;
+import org.apache.felix.ipojo.FieldInvocationContext;
+import org.apache.felix.ipojo.FieldInvocationContext.Type;
 import org.apache.felix.ipojo.PrimitiveHandler;
 import org.apache.felix.ipojo.metadata.Element;
 import org.apache.felix.ipojo.parser.FieldMetadata;
@@ -238,8 +240,16 @@ public class TransactionHandler extends PrimitiveHandler implements Synchronizat
             }
         }
     }
+    
+    public void onFieldAccess(FieldInvocationContext context, Object value) throws Throwable {
+        if (context.getType() == Type.READ) {
+            context.proceed(doOnGet(context.getPojo(), context.getField().getName(), value));
+        } else {
+            context.proceed(value);
+        }
+    }
 
-    public synchronized Object onGet(Object pojo, String fieldName, Object value) {
+    private synchronized Object doOnGet(Object pojo, String fieldName, Object value) {
         try {
             if (m_transactionManager != null) {
                 return m_transactionManager.getTransaction();

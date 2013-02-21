@@ -27,25 +27,6 @@ package org.apache.felix.ipojo;
 */
 public interface FieldInterceptor {
     
-    /**
-     * This method is called when a PUTFIELD operation is detected,
-     * e.g. an assignation.
-     * @param pojo the pojo object setting the value
-     * @param fieldName the field name
-     * @param value the value passed to the field
-     */
-    void onSet(Object pojo, String fieldName, Object value);
-
-    /**
-     * This method is called when a GETFIELD operation is detected.
-     * This method allows to inject a value to the field.
-     * @param pojo the pojo object getting the value
-     * @param fieldName the field name
-     * @param value the value passed to the field (by the previous call)
-     * @return the managed value of the field
-     */
-    Object onGet(Object pojo, String fieldName, Object value);
-    
-    void onFieldAccess(FieldInvocationContext context, Object valueToSet);
+    void onFieldAccess(FieldInvocationContext context, Object value) throws Throwable;
 
 }

@@ -28,8 +28,10 @@ import org.apache.felix.ipojo.ConfigurationException;
 import org.apache.felix.ipojo.ConstructorInterceptor;
 import org.apache.felix.ipojo.ConstructorInvocationContext;
 import org.apache.felix.ipojo.FieldInterceptor;
+import org.apache.felix.ipojo.FieldInvocationContext;
 import org.apache.felix.ipojo.Handler;
 import org.apache.felix.ipojo.InstanceManager;
+import org.apache.felix.ipojo.FieldInvocationContext.Type;
 import org.apache.felix.ipojo.parser.ParseUtils;
 import org.osgi.framework.BundleContext;
 
@@ -615,7 +617,7 @@ public class Property implements FieldInterceptor, ConstructorInterceptor {
             m_manager.setState(ComponentInstance.INVALID);
         }
     }
-
+    
     /**
      * A field value is required by the object 'pojo'.
      * @param pojo the POJO object
@@ -631,17 +633,17 @@ public class Property implements FieldInterceptor, ConstructorInterceptor {
         return m_value;
     }
 
-    /**
-     * The field 'field' receives a new value.
-     * @param pojo the pojo
-     * @param fieldName the field name
-     * @param value the new value
-     * @see org.apache.felix.ipojo.FieldInterceptor#onSet(java.lang.Object, java.lang.String, java.lang.Object)
-     */
-    public synchronized void onSet(Object pojo, String fieldName, Object value) {
-        if (m_value == null || ! m_value.equals(value)) {
+    
+    public void onFieldAccess(FieldInvocationContext context, Object value) throws Throwable {
+      if (context.getType() == Type.READ) {
+          context.proceed(onGet(context.getPojo(), context.getField().getName(), value));
+      } else {
+          // Type.WRITE
+          if (m_value == null || ! m_value.equals(value)) {
             setValue(value);
-        }
+          }
+          context.proceed(value);
+      }
     }
 
     /**
