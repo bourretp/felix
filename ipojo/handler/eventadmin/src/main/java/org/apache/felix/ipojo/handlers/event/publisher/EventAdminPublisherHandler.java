@@ -26,6 +26,7 @@ import java.util.Properties;
 import java.util.Set;
 
 import org.apache.felix.ipojo.ConfigurationException;
+import org.apache.felix.ipojo.FieldInvocationContext;
 import org.apache.felix.ipojo.InstanceManager;
 import org.apache.felix.ipojo.PrimitiveHandler;
 import org.apache.felix.ipojo.architecture.ComponentTypeDescription;
@@ -250,14 +251,15 @@ public class EventAdminPublisherHandler extends PrimitiveHandler {
      *
      * @return the Publisher associated with the accessed field's name
      */
-    public Object onGet(Object pojo, String fieldName, Object value) {
-        // Retrieve the publisher associated to the given field name
+    public void onFieldAccess(FieldInvocationContext context, Object value) throws Throwable {
+        // Retrieve the publisher associated to the given field
+        String fieldName = context.getField().getName();
         Publisher pub = (Publisher) m_publishersByField.get(fieldName);
         if (pub == null) {
             error(LOG_PREFIX + "No publisher associated to the field "
                     + fieldName);
         }
-        return pub;
+        context.proceed(pub);
     }
 
     /**
