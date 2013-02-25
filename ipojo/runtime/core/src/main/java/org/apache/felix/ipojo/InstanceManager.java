@@ -1007,7 +1007,14 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         Collections.reverse(chain);
         
         // Construct the interception context.
-        FieldInvocationContext ctx = new FieldInvocationContext(this, chain, pojo, Type.READ);
+        Field field;
+        try {
+          field = getClazz().getDeclaredField(fieldName);
+        } catch (Exception e) {
+          m_logger.log(Logger.ERROR, "Cannot find POJO field: " + fieldName, e);
+          throw new RuntimeException(e);
+        }
+        FieldInvocationContext ctx = new FieldInvocationContext(this, chain, pojo, Type.READ, field);
         
         // Proceed to the field read access.
         try {
@@ -1028,7 +1035,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             
             // Construct the interception context.
             // The interception chain is _exactly_ the same.
-            FieldInvocationContext ctx2 = new FieldInvocationContext(this, chain, pojo, Type.WRITE);
+            FieldInvocationContext ctx2 = new FieldInvocationContext(this, chain, pojo, Type.WRITE, field);
             
             try {
                 ctx2.proceed(initialValue);
@@ -1182,7 +1189,14 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         Collections.reverse(chain);
         
         // Construct the interception context.
-        FieldInvocationContext ctx = new FieldInvocationContext(this, chain, pojo, Type.WRITE);
+        Field field;
+        try {
+          field = getClazz().getDeclaredField(fieldName);
+        } catch (Exception e) {
+          m_logger.log(Logger.ERROR, "Cannot find POJO field: " + fieldName, e);
+          throw new RuntimeException(e);
+        }
+        FieldInvocationContext ctx = new FieldInvocationContext(this, chain, pojo, Type.WRITE, field);
         
         // Proceed to the field read access.
         try {

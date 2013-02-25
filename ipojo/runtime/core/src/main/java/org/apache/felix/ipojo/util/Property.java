@@ -358,7 +358,7 @@ public class Property implements FieldInterceptor, ConstructorInterceptor {
      * @param type the type of the value.
      * @return the object to inject when the property has no value.
      */
-    private static Object getNoValue(Class type) {
+    public static Object getNoValue(Class type) {
         if (Boolean.TYPE.equals(type)) { return Boolean.FALSE; }
         if (Byte.TYPE.equals(type)) { return new Byte((byte) 0); }
         if (Short.TYPE.equals(type)) { return new Short((short) 0); }

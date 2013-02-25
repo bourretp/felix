@@ -54,7 +54,7 @@ public final class FieldInvocationContext {
   /**
    * The field that is being accessed.
    */
-  private Field m_field;
+  private final Field m_field;
   
   /**
    * The value that has been set/get.
@@ -77,14 +77,14 @@ public final class FieldInvocationContext {
   /**
    * The accessed POJO.
    */
-  private Object m_pojo;
+  private final Object m_pojo;
 
   /**
    * The type of this field access.
    * 
    * @see #getType()
    */
-  private Type m_type;
+  private final Type m_type;
 
   /**
    * Create a new pseudo-constructor invocation context. The POJO is already
@@ -98,13 +98,16 @@ public final class FieldInvocationContext {
    *          the POJO
    * @param type
    *          the type of this field access.
+   * @param field
+   *          the accessed field.
    */
   FieldInvocationContext(InstanceManager manager, List<FieldInterceptor> chain,
-      Object pojo, Type type) {
+      Object pojo, Type type, Field field) {
     m_manager = manager;
     m_chain = chain;
     m_pojo = pojo;
     m_type = type;
+    m_field = field;
   }
 
   /**
@@ -139,6 +142,11 @@ public final class FieldInvocationContext {
    */
   public Object proceed(Object value) throws Throwable {
     
+    // Convert null to the default value for the primitive type.
+    if (m_field.getType().isPrimitive() && value == null) {
+      value = Property.getNoValue(m_field.getType());
+    }
+
     // Check before!
     checkValue(value);
 
