@@ -1054,10 +1054,22 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
     // Used by FieldInvocationContext.proceed()
     synchronized void doSetField(Object pojo, Field field, Object value) throws IllegalAccessException {
         m_fields.put(field.getName(), value);
-        if (!field.isAccessible()) {
-            field.setAccessible(true);
+        List<Object> pojos;
+        if (pojo != null) {
+            pojos = Collections.singletonList(pojo);
+        } else {
+            if (m_pojoObjects != null) {
+                pojos = m_pojoObjects;
+            } else {
+                pojos = Collections.emptyList();
+            }
         }
-        field.set(pojo, value);
+        if (!field.isAccessible()) {
+          field.setAccessible(true);
+        }
+        for (Object o : pojos) {
+            field.set(o, value);
+        }
     }
 
     /**
