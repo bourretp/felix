@@ -1024,7 +1024,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             m_logger.log(Logger.ERROR,
                     "[" + m_name + "] onGet -> The FieldInterceptor chain has failed : " + e.getMessage(), e);
             stop();
-            throw new RuntimeException("Cannot GET POJO field value, the FieldInterceptor chain has thrown an exception : " + e.getMessage());
+            throw new RuntimeException("Cannot GET POJO field value, the FieldInterceptor chain has thrown an exception", e);
         }
         
         // The actual field value has been changed by the interception chain.
@@ -1044,7 +1044,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                 m_logger.log(Logger.ERROR,
                         "[" + m_name + "] onGet -> The FieldInterceptor chain has failed : " + e.getMessage(), e);
                 stop();
-                throw new RuntimeException("Cannot get POJO field value, the FieldInterceptor chain has thrown an exception : " + e.getMessage());
+                throw new RuntimeException("Cannot get POJO field value, the FieldInterceptor chain has thrown an exception", e);
             }
             
         }
@@ -1218,7 +1218,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             m_logger.log(Logger.ERROR,
                     "[" + m_name + "] onSet -> The FieldInterceptor chain has failed : " + e.getMessage(), e);
             stop();
-            throw new RuntimeException("Cannot SET POJO field value, the FieldInterceptor chain has thrown an exception : " + e.getMessage());
+            throw new RuntimeException("Cannot SET POJO field value, the FieldInterceptor chain has thrown an exception", e);
         }
         
     }
