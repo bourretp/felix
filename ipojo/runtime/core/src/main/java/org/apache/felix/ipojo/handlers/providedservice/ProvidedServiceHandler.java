@@ -453,7 +453,11 @@ public class ProvidedServiceHandler extends PrimitiveHandler {
                 boolean update = false;
                 for (int j = 0; j < svc.getProperties().length; j++) {
                     Property prop = svc.getProperties()[j];
-                    if (fieldName.equals(prop.getField()) && ! prop.getValue().equals(value)) {
+                    if (fieldName.equals(prop.getField()))
+                      // Did we change something ?
+                      if (
+                          prop.getValue()  == null  && value != null ||
+                          ! prop.getValue().equals(value)) {
                         // it is the associated property
                         prop.setValue(value);
                         update = true;
