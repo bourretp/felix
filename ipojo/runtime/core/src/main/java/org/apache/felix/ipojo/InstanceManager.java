@@ -1038,7 +1038,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             FieldInvocationContext ctx2 = new FieldInvocationContext(this, chain, pojo, Type.WRITE, field);
             
             try {
-                ctx2.proceed(initialValue);
+                ctx2.proceed(result);
             } catch (Throwable e) {
                 // Catch every other possible error and runtime exception.
                 m_logger.log(Logger.ERROR,
