@@ -98,7 +98,9 @@ public final class MethodInvocationContext {
     m_chain = chain;
     m_pojo = pojo;
     m_method = method;
-    m_params = new MethodParamList(m_method, Arrays.asList(params));
+    List<Class<?>> paramTypes = Collections.unmodifiableList(Arrays
+        .asList(m_method.getParameterTypes()));
+    m_params = new MethodParamList(paramTypes, Arrays.asList(params));
   }
 
   /**
@@ -198,24 +200,20 @@ public final class MethodInvocationContext {
    */
   private static class MethodParamList implements List<Object> {
 
-    final Method m_method;
-    final int m_length;
-    final Class<?>[] m_paramTypes;
+    final List<Class<?>> m_paramTypes;
     final List<Object> m_params;
 
-    MethodParamList(Method method, List<Object> params) {
-      m_method = method;
-      m_paramTypes = m_method.getParameterTypes();
-      m_length = m_paramTypes.length;
+    MethodParamList(List<Class<?>> paramTypes, List<Object> params) {
+      m_paramTypes = paramTypes;
       m_params = params;
     }
 
     public int size() {
-      return m_length;
+      return m_params.size();
     }
 
     public boolean isEmpty() {
-      return m_length == 0;
+      return m_params.isEmpty();
     }
 
     public Object get(int index) {
@@ -223,10 +221,10 @@ public final class MethodInvocationContext {
     }
 
     public Object set(int index, Object element) {
-      Class<?> type = m_paramTypes[index];
+      Class<?> type = m_paramTypes.get(index);
       if (type.isPrimitive() && element == null) {
         throw new NullPointerException();
-      } else if (!Property.isAssignable(m_paramTypes[index], element)) {
+      } else if (!Property.isAssignable(type, element)) {
         throw new ClassCastException();
       }
       return m_params.set(index, element);
@@ -258,7 +256,8 @@ public final class MethodInvocationContext {
 
     public List<Object> subList(int fromIndex, int toIndex) {
       List<Object> subParams = m_params.subList(fromIndex, toIndex);
-      return new MethodParamList(m_method, subParams);
+      List<Class<?>> subParamsTypes = m_paramTypes.subList(fromIndex, toIndex);
+      return new MethodParamList(subParamsTypes, subParams);
     }
 
     public Iterator<Object> iterator() {
