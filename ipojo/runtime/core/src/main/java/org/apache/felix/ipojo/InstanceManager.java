@@ -392,6 +392,20 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                 ((InstanceStateListener) listeners.get(i)).stateChanged(this, STOPPED);
             }
         }
+
+        // Uninject objects from POJO fields
+        for (Object fieldName : m_fields.keySet()) {
+            Field field;
+            try {
+                field = m_clazz.getDeclaredField((String) fieldName);
+                if (!field.getType().isPrimitive()) {
+                    doSetField(null, field, null);
+                }
+            } catch (Exception e) {
+                  m_logger.log(Logger.ERROR, "Cannot remove injected value from field " + fieldName, e);
+            }
+        }
+
     }
 
     /**
