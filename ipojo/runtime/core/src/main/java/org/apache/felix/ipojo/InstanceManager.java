@@ -1066,7 +1066,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
     }
     
     // Used by FieldInvocationContext.proceed()
-    synchronized void doSetField(Object pojo, Field field, Object value) throws IllegalAccessException {
+    public synchronized void doSetField(Object pojo, Field field, Object value) throws IllegalAccessException {
         m_fields.put(field.getName(), value);
         List<Object> pojos;
         if (pojo != null) {

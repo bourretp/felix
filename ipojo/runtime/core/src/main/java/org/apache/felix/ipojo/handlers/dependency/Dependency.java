@@ -20,6 +20,7 @@ package org.apache.felix.ipojo.handlers.dependency;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
@@ -295,6 +296,16 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
      * @param ref : reference to send (if accepted) to the method
      */
     private void callUnbindMethod(ServiceReference ref) {
+        if (m_field != null) {
+            // Remove the reference on the service from the field.
+            InstanceManager manager = m_handler.getInstanceManager();
+            try {
+                Field f = manager.getClazz().getDeclaredField(m_field);
+                manager.doSetField(null, f, null);
+            } catch (Exception e) {
+                m_handler.error("Cannot remove injected dependency " + m_id + " from field " + m_field, e);
+            }
+        }
         if (m_handler.getInstanceManager().getState() > InstanceManager.STOPPED && m_handler.getInstanceManager().getPojoObjects() != null) {
             for (int i = 0; m_callbacks != null && i < m_callbacks.length; i++) {
                 if (m_callbacks[i].getMethodType() == DependencyCallback.UNBIND) {
