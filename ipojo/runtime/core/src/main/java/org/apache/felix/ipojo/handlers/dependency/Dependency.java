@@ -296,6 +296,21 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
      * @param ref : reference to send (if accepted) to the method
      */
     private void callUnbindMethod(ServiceReference ref) {
+        unsetServiceField();
+        if (m_handler.getInstanceManager().getState() > InstanceManager.STOPPED && m_handler.getInstanceManager().getPojoObjects() != null) {
+            for (int i = 0; m_callbacks != null && i < m_callbacks.length; i++) {
+                if (m_callbacks[i].getMethodType() == DependencyCallback.UNBIND) {
+                    invokeCallback(m_callbacks[i], ref, getService(ref, false), null); // Call on each created pojo objects.
+                }
+            }
+        }
+    }
+
+    /**
+     * Release the object (service/proxy) injected in the field of all POJOs.
+     * This method does nothing if no field is associated to this dependency.
+     */
+    private void unsetServiceField() {
         if (m_field != null) {
             // Remove the reference on the service from the field.
             InstanceManager manager = m_handler.getInstanceManager();
@@ -304,13 +319,6 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
                 manager.doSetField(null, f, null);
             } catch (Exception e) {
                 m_handler.error("Cannot remove injected dependency " + m_id + " from field " + m_field, e);
-            }
-        }
-        if (m_handler.getInstanceManager().getState() > InstanceManager.STOPPED && m_handler.getInstanceManager().getPojoObjects() != null) {
-            for (int i = 0; m_callbacks != null && i < m_callbacks.length; i++) {
-                if (m_callbacks[i].getMethodType() == DependencyCallback.UNBIND) {
-                    invokeCallback(m_callbacks[i], ref, getService(ref, false), null); // Call on each created pojo objects.
-                }
             }
         }
     }
