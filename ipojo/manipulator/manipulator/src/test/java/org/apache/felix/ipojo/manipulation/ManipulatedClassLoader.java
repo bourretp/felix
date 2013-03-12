@@ -21,7 +21,7 @@ package org.apache.felix.ipojo.manipulation;
 /**
  * A classloader used to load manipulated classes.
  */
-class ManipulatedClassLoader extends ClassLoader {
+public class ManipulatedClassLoader extends ClassLoader {
 
     private String name;
     private byte[] clazz;

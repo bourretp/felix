@@ -29,6 +29,7 @@ import junit.framework.TestCase;
 
 import org.apache.felix.ipojo.InstanceManager;
 import org.apache.felix.ipojo.Pojo;
+import org.junit.Ignore;
 import org.mockito.Mockito;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.CheckClassAdapter;
@@ -195,7 +196,7 @@ public class ManipulatorTest extends TestCase {
 
     }
 
-    //TODO CE - 19/10/2011 Why do we have a classloader issue in this test
+    @Ignore("This test requires a classloader storing the inner class")
     public void _testManipulatingTheInner() throws Exception {
         Manipulator manipulator = new Manipulator();
         byte[] clazz = manipulator.manipulate(getBytesFromFile(new File("target/test-classes/test/PojoWithInner.class")));
