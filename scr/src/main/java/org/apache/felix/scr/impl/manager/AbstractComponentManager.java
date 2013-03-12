@@ -30,9 +30,12 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.felix.scr.Component;
@@ -95,12 +98,9 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
     // A reference to the BundleComponentActivator
     private BundleComponentActivator m_activator;
 
-    // The ServiceRegistration
-    private final AtomicReference<ServiceRegistration<S>> m_serviceRegistration;
-
+    // The ServiceRegistration is now tracked in the RegistrationManager
+    
     private final ReentrantLock m_stateLock;
-
-    private long m_timeout = 5000;
 
     protected volatile boolean enabled;
     protected volatile CountDownLatch enabledLatch;
@@ -120,6 +120,8 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
 
     private volatile int ceiling;
 
+    private final Lock missingLock = new ReentrantLock();
+    private final Condition missingCondition = missingLock.newCondition();
     private final Set<Integer> missing = new TreeSet<Integer>( );
 
 
@@ -142,7 +144,6 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         m_dependencyManagers = loadDependencyManagers( metadata );
 
         m_stateLock = new ReentrantLock( true );
-        m_serviceRegistration = new AtomicReference<ServiceRegistration<S>>();
 
         // dump component details
         if ( isLogEnabled( LogService.LOG_DEBUG ) )
@@ -176,7 +177,7 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
     {
         try
         {
-            if (!m_stateLock.tryLock( m_timeout, TimeUnit.MILLISECONDS ) )
+            if (!m_stateLock.tryLock( getLockTimeout(), TimeUnit.MILLISECONDS ) )
             {
             	dumpThreads();
                 throw new IllegalStateException( "Could not obtain lock" );
@@ -187,6 +188,11 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
             //TODO this is so wrong
             throw new IllegalStateException( "Could not obtain lock (Reason: " + e + ")" );
         }
+    }
+
+    private long getLockTimeout()
+    {
+        return getActivator().getConfiguration().lockTimeout();
     }
 
     final void releaseWriteLock( String source )
@@ -215,7 +221,8 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
     //service event tracking
     void tracked( int trackingCount )
     {
-        synchronized ( missing )
+        missingLock.lock();
+        try
         {
             if (trackingCount == floor + 1 )
             {
@@ -234,13 +241,18 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
                 }
                 ceiling = trackingCount;
             }
-            missing.notifyAll();
+            missingCondition.signalAll();
+        }
+        finally
+        {
+            missingLock.unlock();
         }
     }
 
     void waitForTracked( int trackingCount )
     {
-        synchronized ( missing )
+        missingLock.lock();
+        try
         {
             while ( ceiling  < trackingCount || ( !missing.isEmpty() && missing.iterator().next() < trackingCount))
             {
@@ -248,13 +260,24 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
                         new Object[] {trackingCount, ceiling, missing}, null );
                 try
                 {
-                    missing.wait( );
+                    if ( !missingCondition.await( getLockTimeout(), TimeUnit.MILLISECONDS ))
+                    {
+                        log( LogService.LOG_ERROR, "waitForTracked timed out: {0} ceiling: {1} missing: {2},  Expect further errors",
+                                new Object[] {trackingCount, ceiling, missing}, null );
+                        missing.clear();
+                        return;
+                        
+                    }
                 }
                 catch ( InterruptedException e )
                 {
                     //??
                 }
             }
+        }
+        finally
+        {
+            missingLock.unlock();
         }
     }
 
@@ -615,9 +638,9 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         m_internalEnabled = true;
     }
 
-    final boolean activateInternal( int trackingCount )
+    final void activateInternal( int trackingCount )
     {
-        return m_state.activate( this );
+         m_state.activate( this );
     }
 
     final void deactivateInternal( int reason, boolean disable, int trackingCount )
@@ -648,25 +671,11 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
 
     final ServiceReference getServiceReference()
     {
-        // This method is not synchronized even though it accesses the state.
-        // The reason for this is that we just want to have the state return
-        // the service reference which comes from the service registration.
-        // The only thing that may happen is that the service registration is
-        // still set on this instance but the service has already been
-        // unregistered. In this case an IllegalStateException may be thrown
-        // which we just catch and ignore returning null
-        State state = m_state;
-        try
+        ServiceRegistration reg = getServiceRegistration();
+        if (reg != null)
         {
-            return state.getServiceReference( this );
+            return reg.getReference();
         }
-        catch ( IllegalStateException ise )
-        {
-            // may be thrown if the service has already been unregistered but
-            // the service registration is still set on this component manager
-            // we ignore this exception and assume there is no service reference
-        }
-
         return null;
     }
 
@@ -701,88 +710,75 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
     {
         return m_componentMethods;
     }
-    /**
-     * Registers the service on behalf of the component.
-     *
-     * @return The <code>ServiceRegistration</code> for the registered
-     *      service or <code>null</code> if no service is registered.
-     */
-    protected void registerService()
+    
+    protected String[] getProvidedServices()
     {
         if ( getComponentMetadata().getServiceMetadata() != null )
         {
             String[] provides = getComponentMetadata().getServiceMetadata().getProvides();
-            registerService( provides );
+            return provides;
         }
+        return null;
+        
     }
 
-    protected void registerService( String[] provides )
+    private final RegistrationManager<ServiceRegistration<S>> registrationManager = new RegistrationManager<ServiceRegistration<S>>()
     {
-        synchronized ( m_serviceRegistration )
+
+        @Override
+        ServiceRegistration<S> register(String[] services)
         {
-            ServiceRegistration existing = m_serviceRegistration.get();
-            if ( existing == null )
-            {
-                log( LogService.LOG_DEBUG, "registering services", null );
-
-                // get a copy of the component properties as service properties
-                final Dictionary<String, Object> serviceProperties = getServiceProperties();
-
-                ServiceRegistration newRegistration = getActivator().getBundleContext().registerService(
-                        provides,
-                        getService(), serviceProperties );
-                boolean weWon = !disposed && m_serviceRegistration.compareAndSet( existing, newRegistration );
-                if ( weWon )
-                {
-                    return;
-                }
-                newRegistration.unregister();
-            }
-            else
-            {
-                log( LogService.LOG_DEBUG, "Existing service registration, not registering", null );
-            }
+            final Dictionary<String, Object> serviceProperties = getServiceProperties();
+            ServiceRegistration<S> serviceRegistration = ( ServiceRegistration<S> ) getActivator().getBundleContext()
+                    .registerService( services, getService(), serviceProperties );
+            return serviceRegistration;
         }
 
-    }
+        @Override
+        void unregister(ServiceRegistration<S> serviceRegistration)
+        {
+            serviceRegistration.unregister();
+        }
+
+        @Override
+        void log(int level, String message, Object[] arguments, Throwable ex)
+        {
+            AbstractComponentManager.this.log(level, message, arguments, ex);
+        }
+
+        @Override
+        long getTimeout()
+        {
+            return getLockTimeout();
+        }
+        
+    };
+    
 
     /**
-     * Registers the service on behalf of the component using the
-     * {@link #registerService()} method. Also records the service
-     * registration for later {@link #unregisterComponentService()}.
-     * <p>
-     * Due to more extensive locking FELIX-3317 is no longer relevant.
+     * Registers the service on behalf of the component.
      *
      */
-    final void registerComponentService()
+    protected boolean registerService()
     {
-        registerService();
-    }
-
-    final void unregisterComponentService()
-    {
-        if ( !disposed || m_serviceRegistration.get() != null )
+        String[] services = getProvidedServices();
+        if ( services != null )
         {
-            synchronized ( m_serviceRegistration )
-            {
-                ServiceRegistration sr = m_serviceRegistration.get();
-
-                if ( sr != null && m_serviceRegistration.compareAndSet( sr, null ) )
-                {
-                    log( LogService.LOG_DEBUG, "Unregistering services", null );
-                    sr.unregister();
-                }
-                else if (sr == null)
-                {
-                    log( LogService.LOG_DEBUG, "Service already unregistered", null);
-                }
-                else
-                {
-                    log( LogService.LOG_DEBUG, "Service unregistered concurrently by another thread", null);
-                }
-            }
+            return registrationManager.changeRegistration( RegistrationManager.RegState.registered, services);
         }
+        return true;
     }
+
+    protected boolean unregisterService()
+    {
+        String[] services = getProvidedServices();
+        if ( services != null )
+        {
+            return registrationManager.changeRegistration( RegistrationManager.RegState.unregistered, services );
+        }
+        return true;
+    }
+    
 
     AtomicInteger getTrackingCount()
     {
@@ -883,9 +879,9 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
     }
 
 
-    final ServiceRegistration<?> getServiceRegistration()
+    final ServiceRegistration<S> getServiceRegistration() 
     {
-        return m_serviceRegistration.get();
+        return registrationManager.getServiceRegistration();
     }
 
 
@@ -1201,7 +1197,7 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
     void changeState( State newState )
     {
         log( LogService.LOG_DEBUG, "State transition : {0} -> {1} : service reg: {2}", new Object[]
-            { m_state, newState, m_serviceRegistration.get() }, null );
+            { m_state, newState, getServiceRegistration() }, null );
         m_state = newState;
     }
 
@@ -1261,12 +1257,6 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         }
 
 
-        ServiceReference<?> getServiceReference( AbstractComponentManager acm )
-        {
-            throw new IllegalStateException("getServiceReference" + this);
-        }
-
-
         Object getService( ImmediateComponentManager dcm )
         {
             throw new IllegalStateException("getService" + this);
@@ -1285,10 +1275,9 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         }
 
 
-        boolean activate( AbstractComponentManager acm )
+        void activate( AbstractComponentManager acm )
         {
             log( acm, "activate" );
-            return false;
         }
 
 
@@ -1313,14 +1302,18 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         private void log( AbstractComponentManager acm, String event )
         {
             acm.log( LogService.LOG_DEBUG, "Current state: {0}, Event: {1}, Service registration: {2}", new Object[]
-                { m_name, event, acm.m_serviceRegistration.get() }, null );
+                { m_name, event, acm.getServiceRegistration() }, null );
         }
 
         void doDeactivate( AbstractComponentManager acm, int reason, boolean disable )
         {
             try
             {
-                acm.unregisterComponentService();
+                if ( !acm.unregisterService() )
+                {
+                    //another thread is deactivating.
+                    return;
+                }
                 acm.obtainWriteLock( "AbstractComponentManager.State.doDeactivate.1" );
                 try
                 {
@@ -1434,25 +1427,24 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
          * returns true if this thread succeeds in activating the component, or the component is not able to be activated.
          * Returns false if some other thread succeeds in activating the component.
          * @param acm
-         * @return
          */
-        boolean activate( AbstractComponentManager acm )
+        void activate( AbstractComponentManager acm )
         {
             if ( !acm.isActivatorActive() )
             {
                 acm.log( LogService.LOG_DEBUG, "Bundle's component activator is not active; not activating component",
                     null );
-                return true;
+                return;
             }
 
-            acm.log( LogService.LOG_DEBUG, "Activating component from state ", new Object[] {this},  null );
+            acm.log( LogService.LOG_DEBUG, "Activating component from state {0}", new Object[] {this},  null );
 
             // Before creating the implementation object, we are going to
             // test if we have configuration if such is required
             if ( !acm.hasConfiguration() && acm.getComponentMetadata().isConfigurationRequired() )
             {
                 acm.log( LogService.LOG_DEBUG, "Missing required configuration, cannot activate", null );
-                return true;
+                return;
             }
 
             // Before creating the implementation object, we are going to
@@ -1461,7 +1453,7 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
             {
                 acm.log( LogService.LOG_DEBUG, "Component is not permitted to register all services, cannot activate",
                     null );
-                return true;
+                return;
             }
 
             // Update our target filters.
@@ -1473,7 +1465,7 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
             if ( !acm.verifyDependencyManagers() )
             {
                 acm.log( LogService.LOG_DEBUG, "Not all dependencies satisfied, cannot activate", null );
-                return true;
+                return;
             }
 
             // set satisfied state before registering the service because
@@ -1488,7 +1480,11 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
             final State satisfiedState = acm.getSatisfiedState();
             acm.changeState( satisfiedState );
 
-            acm.registerComponentService();
+            if ( !acm.registerService() )
+            {
+                //some other thread is activating us, or we got concurrently deactivated.
+                return;
+            }
 
             // 1. Load the component implementation class
             // 2. Create the component instance and component context
@@ -1502,7 +1498,7 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
                     if ( !acm.collectDependencies() )
                     {
                         acm.log( LogService.LOG_DEBUG, "Not all dependencies collected, cannot create object (1)", null );
-                        return false;
+                        return;
                     }
                     else
                     {
@@ -1514,12 +1510,12 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
                 catch ( IllegalStateException e )
                 {
                     acm.log( LogService.LOG_DEBUG, "Not all dependencies collected, cannot create object (2)", null );
-                    return false;
+                    return;
                 }
                 catch ( Throwable t )
                 {
                     acm.log( LogService.LOG_ERROR, "Unexpected throwable from attempt to collect dependencies", t );
-                    return false;
+                    return;
                 }
                 acm.obtainWriteLock( "AbstractComponentManager.Unsatisfied.activate.1" );
                 try
@@ -1538,8 +1534,7 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
                 }
 
             }
-            return true;
-
+ 
         }
 
         void deactivate( AbstractComponentManager acm, int reason, boolean disable )
@@ -1592,14 +1587,6 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         {
             super( name, state );
         }
-
-
-        ServiceReference getServiceReference( AbstractComponentManager acm )
-        {
-            ServiceRegistration sr = acm.getServiceRegistration();
-            return sr == null ? null : sr.getReference();
-        }
-
 
         void deactivate( AbstractComponentManager acm, int reason, boolean disable )
         {
@@ -1819,7 +1806,7 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
             return m_inst;
         }
 
-        boolean activate( AbstractComponentManager acm )
+        void activate( AbstractComponentManager acm )
         {
             throw new IllegalStateException( "activate: " + this );
         }

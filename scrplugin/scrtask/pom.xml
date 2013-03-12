@@ -29,7 +29,7 @@
     <groupId>org.apache.felix</groupId>
     <artifactId>org.apache.felix.scr.ant</artifactId>
 
-    <version>1.3.1-SNAPSHOT</version>
+    <version>1.5.1-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>SCR Ant Task</name>
@@ -54,19 +54,19 @@
         <dependency>
             <groupId>org.apache.felix</groupId>
             <artifactId>org.apache.felix.scr.generator</artifactId>
-            <version>1.3.1-SNAPSHOT</version>
+            <version>1.5.1-SNAPSHOT</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.felix</groupId>
             <artifactId>org.apache.felix.scr.annotations</artifactId>
-            <version>1.7.0</version>
+            <version>1.9.0</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.felix</groupId>
             <artifactId>org.apache.felix.scr.ds-annotations</artifactId>
-            <version>1.2.0</version>
+            <version>1.2.2</version>
             <scope>compile</scope>
         </dependency>
         <dependency>

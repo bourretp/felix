@@ -19,6 +19,9 @@
 package org.apache.felix.scr.impl.config;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.Collection;
 import java.util.Dictionary;
 import java.util.Hashtable;
 import java.util.Iterator;
@@ -39,6 +42,27 @@ import org.osgi.service.log.LogService;
 
 public class ConfigurationSupport implements ConfigurationListener
 {
+    private static final ChangeCount changeCounter;
+    static
+    {
+        ChangeCount cc = null;
+        try
+        {
+            Configuration.class.getMethod( "getChangeCount", null );
+            cc = new R5ChangeCount();
+        }
+        catch ( SecurityException e )
+        {
+        }
+        catch ( NoSuchMethodException e )
+        {
+        }
+        if ( cc == null )
+        {
+            cc = new R4ChangeCount();
+        }
+        changeCounter = cc;
+    }
 
     // the registry of components to be configured
     private final ComponentRegistry m_registry;
@@ -96,8 +120,9 @@ public class ConfigurationSupport implements ConfigurationListener
                                 for (int i = 0; i < factory.length; i++)
                                 {
                                     final String pid = factory[i].getPid();
-                                    final Dictionary props = getConfiguration(ca, pid, bundleLocation);
-                                    holder.configurationUpdated(pid, props);
+                                    final Configuration config = getConfiguration(ca, pid, bundleLocation);
+                                    long changeCount = changeCounter.getChangeCount( config, false, -1 );
+                                    holder.configurationUpdated(pid, config.getProperties(), changeCount);
                                 }
                             }
                             else
@@ -106,8 +131,9 @@ public class ConfigurationSupport implements ConfigurationListener
                                 final Configuration singleton = findSingletonConfiguration(ca, confPid);
                                 if (singleton != null)
                                 {
-                                    final Dictionary props = getConfiguration(ca, confPid, bundleLocation);
-                                    holder.configurationUpdated(confPid, props);
+                                    final Configuration config = getConfiguration(ca, confPid, bundleLocation);
+                                    long changeCount = changeCounter.getChangeCount( config, false, -1 );
+                                    holder.configurationUpdated(confPid, config.getProperties(), changeCount);
                                 }
                             }
                         }
@@ -182,33 +208,32 @@ public class ConfigurationSupport implements ConfigurationListener
 
         // iterate over all components which must be configured with this pid
         // (since DS 1.2, components may specify a specific configuration PID (112.4.4 configuration-pid)
-        Iterator it;
+        Collection<ComponentHolder> holders;
 
         if (factoryPid == null)
         {
-            it = this.m_registry.getComponentHoldersByPid(pid);
+            holders = this.m_registry.getComponentHoldersByPid(pid);
         }
         else
         {
-            it = this.m_registry.getComponentHoldersByPid(factoryPid);
+            holders = this.m_registry.getComponentHoldersByPid(factoryPid);
         }
 
         Activator.log(LogService.LOG_DEBUG, null, "configurationEvent: Handling "
                 + ((event.getType() == ConfigurationEvent.CM_DELETED) ? "DELETE" : "UPDATE")
                 + " of Configuration PID=" + pid, null);
 
-        while (it.hasNext())
+        for  ( ComponentHolder componentHolder: holders )
         {
-            final ComponentHolder cm = (ComponentHolder) it.next();
-            if (!cm.getComponentMetadata().isConfigurationIgnored())
+            if (!componentHolder.getComponentMetadata().isConfigurationIgnored())
             {
                 switch (event.getType()) {
                 case ConfigurationEvent.CM_DELETED:
-                    cm.configurationDeleted(pid);
+                    componentHolder.configurationDeleted(pid);
                     break;
 
                 case ConfigurationEvent.CM_UPDATED:
-                    final BundleComponentActivator activator = cm.getActivator();
+                    final BundleComponentActivator activator = componentHolder.getActivator();
                     if (activator == null)
                     {
                         break;
@@ -234,17 +259,18 @@ public class ConfigurationSupport implements ConfigurationListener
                                     if ( cao instanceof ConfigurationAdmin )
                                     {
                                         final ConfigurationAdmin ca = ( ConfigurationAdmin ) cao;
-                                        final Dictionary dict = getConfiguration( ca, pid, bundleContext
+                                        final Configuration config = getConfiguration( ca, pid, bundleContext
                                             .getBundle().getLocation() );
-                                        if ( dict != null )
+                                        if ( config != null )
                                         {
-                                            cm.configurationUpdated( pid, dict );
+                                            long changeCount = changeCounter.getChangeCount( config, true, componentHolder.getChangeCount( pid ) );
+                                            componentHolder.configurationUpdated( pid, config.getProperties(), changeCount );
                                         }
                                     }
                                     else
                                     {
                                         Activator.log( LogService.LOG_WARNING, null, "Cannot reconfigure component "
-                                            + cm.getComponentMetadata().getName(), null );
+                                            + componentHolder.getComponentMetadata().getName(), null );
                                         Activator.log( LogService.LOG_WARNING, null,
                                             "Component Bundle's Configuration Admin is not compatible with " +
                                             "ours. This happens if multiple Configuration Admin API versions " +
@@ -280,14 +306,14 @@ public class ConfigurationSupport implements ConfigurationListener
         }
     }
 
-    private Dictionary getConfiguration(final ConfigurationAdmin ca, final String pid, final String bundleLocation)
+    private Configuration getConfiguration(final ConfigurationAdmin ca, final String pid, final String bundleLocation)
     {
         try
         {
             final Configuration cfg = ca.getConfiguration(pid);
             if (bundleLocation.equals(cfg.getBundleLocation()))
             {
-                return cfg.getProperties();
+                return cfg;
             }
 
             // configuration belongs to another bundle, cannot be used here
@@ -348,5 +374,27 @@ public class ConfigurationSupport implements ConfigurationListener
 
         // no factories in case of problems
         return null;
+    }
+    
+    
+    private interface ChangeCount {
+        long getChangeCount( Configuration configuration, boolean fromEvent, long previous );
+    }
+    
+    private static class R5ChangeCount implements ChangeCount {
+
+        public long getChangeCount(Configuration configuration, boolean fromEvent, long previous)
+        {
+            return configuration.getChangeCount();
+        }
+    }   
+    
+    private static class R4ChangeCount implements ChangeCount {
+
+        public long getChangeCount(Configuration configuration, boolean fromEvent, long previous)
+        {
+            return fromEvent? previous + 1:0;
+        }
+        
     }
 }

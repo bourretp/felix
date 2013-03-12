@@ -19,6 +19,9 @@
 package org.apache.felix.scr.integration.components.felix3680_2;
 
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
@@ -27,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.felix.scr.ScrService;
+import org.apache.felix.scr.impl.manager.ThreadDump;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.ServiceReference;
 import org.osgi.framework.ServiceRegistration;
@@ -36,13 +40,14 @@ import org.osgi.service.log.LogService;
 
 public class Main implements Runnable
 {
+    private static final int LATCH_TIMEOUT = 10000;
     private volatile ComponentContext m_ctx;
     private volatile AtomicInteger m_counter = new AtomicInteger();
     private volatile CountDownLatch m_enabledLatch;
     private volatile CountDownLatch m_disabledLatch;
     private volatile LogService m_logService;
     private ScrService m_scr;
-    private final Executor m_exec = Executors.newFixedThreadPool( 50 );
+    private final Executor m_exec = Executors.newFixedThreadPool( 12 );
     private volatile BundleContext m_bctx;
     volatile ConcurrentHashMap<Class, ServiceRegistration> m_registrations = new ConcurrentHashMap<Class, ServiceRegistration>();
     volatile Exception _bindStackTrace;
@@ -165,7 +170,7 @@ public class Main implements Runnable
 
         _bindStackTrace = trace;
 
-        A a = ( A ) sr.getBundle().getBundleContext().getService( sr );
+        A a = ( A ) m_ctx.locateService( "a", sr );
         if ( a == null )
         {
             throw new IllegalStateException( "bindA: bundleContext.getService returned null" );
@@ -216,10 +221,11 @@ public class Main implements Runnable
 
             try
             {
-                if ( !m_enabledLatch.await( 10000, TimeUnit.MILLISECONDS ) )
+                if ( !m_enabledLatch.await( LATCH_TIMEOUT, TimeUnit.MILLISECONDS ) )
                 {
                     System.out.println( "Did not get A injected timely ... see logs.txt" );
                     m_logService.log( LogService.LOG_ERROR, "enableLatch TIMEOUT" );
+                    m_logService.log(LogService.LOG_ERROR, dumpThreads());
                     dumpA();
                     System.exit( 1 );
                 }
@@ -231,10 +237,11 @@ public class Main implements Runnable
             registry.unregisterBCDEFGHIJK( m_exec );
             try
             {
-                if ( !m_disabledLatch.await( 10000, TimeUnit.MILLISECONDS ) )
+                if ( !m_disabledLatch.await( LATCH_TIMEOUT, TimeUnit.MILLISECONDS ) )
                 {
                     System.out.println( "Could not disable components timely ... see logs.txt" );
                     m_logService.log( LogService.LOG_ERROR, "disableLatch TIMEOUT" );
+                    m_logService.log(LogService.LOG_ERROR, dumpThreads());
                     dumpA();
                     System.exit( 1 );
                 }
@@ -246,11 +253,29 @@ public class Main implements Runnable
             ++loop;
             if ( loop % 100 == 0 )
             {
-                m_logService.log( LogService.LOG_WARNING, "Performed " + loop + " tests." );
+                m_logService.log( LogService.LOG_INFO, "Performed " + loop + " tests." );
             }
         }
     }
 
+    private String dumpThreads()
+    {
+        ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+        StringBuffer b = new StringBuffer( "Thread dump\n" );
+        ThreadInfo[] infos = threadMXBean.dumpAllThreads( threadMXBean.isObjectMonitorUsageSupported(), threadMXBean.isSynchronizerUsageSupported() );
+        for ( int i = 0; i < infos.length; i++ )
+        {
+            ThreadInfo ti = infos[i];
+            b.append( "\n\nThreadId: " ).append( ti.getThreadId() ).append( " : name: " ).append( ti.getThreadName() ).append( " State: " ).append( ti.getThreadState() );
+            b.append( "\n  LockInfo: " ).append( ti.getLockInfo() ).append( " LockOwnerId: " ).append( ti.getLockOwnerId() ).append( " LockOwnerName: ").append( ti.getLockOwnerName() );
+            StackTraceElement[] stackTrace = ti.getStackTrace();
+            for (int j = 0; j < stackTrace.length; j++ )
+            {
+                b.append( "\n  " ).append( stackTrace[j] );
+            }
+        }
+        return b.toString();
+    }
 
     private void dumpA()
     {

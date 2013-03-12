@@ -281,11 +281,25 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
             if (m_callbacks[j].getMethodType() == DependencyCallback.BIND) {
                 if (isAggregate()) {
                     for (int i = 0; i < refs.length; i++) {
-                        invokeCallback(m_callbacks[j], refs[i], getService(refs[i]), pojo);
+                        Object svc = getService(refs[i]);
+                        if (svc != null) {
+                            invokeCallback(m_callbacks[j], refs[i], svc, pojo);
+                        } else {
+                            // The service left already, or the service object cannot be created.
+                            // We consider it as a departure.
+                            removedService(refs[i],  null);
+                        }
                     }
                 } else {
                     // Take the first reference.
-                    invokeCallback(m_callbacks[j], refs[0], getService(refs[0]), pojo);
+                    Object svc = getService(refs[0]);
+                    if (svc != null) {
+                        invokeCallback(m_callbacks[j], refs[0], svc, pojo);
+                    } else {
+                        // The service left already, or the service object cannot be created.
+                        // We consider it as a departure.
+                        removedService(refs[0],  null);
+                    }
                 }
             }
         }
@@ -375,7 +389,15 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
         if (m_handler.getInstanceManager().getState() > InstanceManager.STOPPED && m_handler.getInstanceManager().getPojoObjects() != null) {
             for (int i = 0; m_callbacks != null && i < m_callbacks.length; i++) {
                 if (m_callbacks[i].getMethodType() == DependencyCallback.BIND) {
-                    invokeCallback(m_callbacks[i], ref, getService(ref), null);
+                    Object svc = getService(ref);
+                    if (svc != null) {
+                        invokeCallback(m_callbacks[i], ref, svc, null);
+                    } else {
+                        // We can't get the service object (https://issues.apache.org/jira/browse/FELIX-3896).
+                        // This is probably because the service is leaving.
+                        // We consider it as a departure.
+                        removedService(ref, null);
+                    }
                 }
             }
         }
@@ -441,6 +463,13 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
                 // Can we really proxy ? We can proxy only interfaces.
                 if (getSpecification().isInterface()) {
                     String type = getHandler().getInstanceManager().getContext().getProperty(DependencyHandler.PROXY_TYPE_PROPERTY);
+
+                    // If it's null we should check on the System directly, Felix delegates to it,
+                    // but not other frameworks
+                    if (type == null) {
+                        type = System.getProperty(DependencyHandler.PROXY_TYPE_PROPERTY);
+                    }
+
                     if (type == null || type.equals(DependencyHandler.SMART_PROXY)) {
                         SmartProxyFactory proxyFactory = new SmartProxyFactory(this.getClass().getClassLoader());
                         m_proxyObject = proxyFactory.getProxy(getSpecification(), this);

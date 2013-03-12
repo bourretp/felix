@@ -21,6 +21,7 @@ package org.apache.felix.scr.impl.manager;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Dictionary;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -78,11 +79,16 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
     private volatile Dictionary<String, Object> m_configuration;
     
     /**
-     * Flag telling if our component factory is configured from config admin.
+     * Flag telling if our component factory is currently configured from config admin.
      * We are configured when configuration policy is required and we have received the
      * config admin properties, or when configuration policy is optional or ignored.
      */
-    public volatile boolean m_isConfigured;
+    private volatile boolean m_hasConfiguration;
+    
+    /**
+     * Configuration change count (R5) or imitation (R4)
+     */
+    protected volatile long m_changeCount = -1;
 
     public ComponentFactoryImpl( BundleComponentActivator activator, ComponentMetadata metadata )
     {
@@ -110,7 +116,7 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
         ComponentInstance instance;
         cm.setFactoryProperties( dictionary );
         //configure the properties
-        cm.reconfigure( m_configuration );
+        cm.reconfigure( m_configuration, m_changeCount );
         // enable
         cm.enableInternal();
         //activate immediately
@@ -186,11 +192,10 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
     }
 
 
-    protected void registerService()
+    @Override
+    protected String[] getProvidedServices()
     {
-        log( LogService.LOG_DEBUG, "registering component factory", null );
-        registerService(new String[]
-            { ComponentFactory.class.getName() });
+        return new String[] { ComponentFactory.class.getName() };
     }
 
 
@@ -203,7 +208,7 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
 
     public boolean hasConfiguration()
     {
-        return m_isConfigured;
+        return m_hasConfiguration;
     }
 
 
@@ -270,16 +275,6 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
 
     protected boolean collectDependencies()
     {
-//        Map<DependencyManager<S, ?>, Map<ServiceReference<?>, RefPair<?>>> old = getDependencyMap();
-//        if ( old == null )
-//        {
-//            Map<DependencyManager<S, ?>, Map<ServiceReference<?>, RefPair<?>>> dependenciesMap = new HashMap<DependencyManager<S, ?>, Map<ServiceReference<?>, RefPair<?>>>();
-//            for (DependencyManager dm: getDependencyManagers() )
-//            {
-//                dependenciesMap.put( dm, Collections.EMPTY_MAP );
-//            }
-//            setDependencyMap( old, dependenciesMap );
-//        }
         return true;
     }
 
@@ -314,15 +309,16 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
         {
             log( LogService.LOG_DEBUG, "Handling configuration removal", null );
 
+            m_changeCount = -1;
             // nothing to do if there is no configuration currently known.
-            if ( !m_isConfigured )
+            if ( !m_hasConfiguration )
             {
                 log( LogService.LOG_DEBUG, "ignoring configuration removal: not currently configured", null );
                 return;
             }
 
             // So far, we were configured: clear the current configuration.
-            m_isConfigured = false;
+            m_hasConfiguration = false;
             m_configuration = new Hashtable();
 
             log( LogService.LOG_DEBUG, "Current component factory state={0}", new Object[] {getState()}, null );
@@ -342,8 +338,23 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
     }
 
 
-    public void configurationUpdated( String pid, Dictionary<String, Object> configuration )
+    public void configurationUpdated( String pid, Dictionary<String, Object> configuration, long changeCount )
     {
+        if ( configuration != null )
+        {
+            if ( changeCount <= m_changeCount )
+            {
+                log( LogService.LOG_DEBUG,
+                        "ImmediateComponentHolder out of order configuration updated for pid {0} with existing count {1}, new count {2}",
+                        new Object[] { getConfigurationPid(), m_changeCount, changeCount }, null );
+                return;
+            }
+            m_changeCount = changeCount;
+        }
+        else 
+        {
+            m_changeCount = -1;
+        }
         if ( pid.equals( getComponentMetadata().getConfigurationPid() ) )
         {
             log( LogService.LOG_INFO, "Configuration PID updated for Component Factory", null );
@@ -358,7 +369,7 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
             m_configuration = configuration;
 
             // We are now configured from config admin.
-            m_isConfigured = true;
+            m_hasConfiguration = true;
 
             log( LogService.LOG_INFO, "Current ComponentFactory state={0}", new Object[]
                     {getState()}, null );
@@ -398,6 +409,12 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
         }
     }
 
+
+    public synchronized long getChangeCount( String pid)
+    {
+        
+        return m_changeCount;
+    }
 
     public Component[] getComponents()
     {

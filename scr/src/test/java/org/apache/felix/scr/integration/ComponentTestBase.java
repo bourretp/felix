@@ -117,6 +117,8 @@ public abstract class ComponentTestBase
 
     //set to true to only get last 1000 lines of log.
     protected static boolean restrictedLogging;
+    
+    protected static String felixCaVersion = System.getProperty( "felix.ca.version" );
 
 
     static
@@ -153,7 +155,7 @@ public abstract class ComponentTestBase
             provision(
                 CoreOptions.bundle( bundleFile.toURI().toString() ),
                 mavenBundle( "org.ops4j.pax.tinybundles", "tinybundles", "1.0.0" ),
-                mavenBundle( "org.apache.felix", "org.apache.felix.configadmin", "1.0.10" )
+                mavenBundle( "org.apache.felix", "org.apache.felix.configadmin", felixCaVersion )
              ),
              junitBundles(),
              systemProperty( "ds.factory.enabled" ).value( Boolean.toString( NONSTANDARD_COMPONENT_FACTORY_BEHAVIOR ) ),
@@ -669,7 +671,7 @@ public abstract class ComponentTestBase
         private final SimpleDateFormat m_sdf = new SimpleDateFormat( "HH:mm:ss,S" );
         private final static PrintStream m_out = new PrintStream( new BufferedOutputStream( new FileOutputStream(
             FileDescriptor.err ), 128 ) );
-        private final List<String> m_warnings = Collections.synchronizedList( new ArrayList<String>() );//<String>
+        private final List<String> m_warnings = Collections.synchronizedList( new ArrayList<String>() );
         private LinkedBlockingQueue<LogEntry> m_logQueue = new LinkedBlockingQueue<LogEntry>();
         private volatile Thread m_logThread;
         private volatile PrintStream m_realOut;
@@ -749,7 +751,7 @@ public abstract class ComponentTestBase
                         else
                         {
                             // Avoid out of memory ...
-                            m_warnings.add( 1024, "Unexpected errors logged. Please look at previous logs" );
+                            m_warnings.set( 1023, "Unexpected errors logged. Please look at previous logs" );
                         }
                     }
 
