@@ -69,6 +69,8 @@ public class Common {
                 // Repository required to load harmcrest (OSGi-fied version).
                 repository("http://repository.springsource.com/maven/bundles/external").id(
                         "com.springsource.repository.bundles.external"),
+                repository("http://repo1.maven.org/maven2").id(
+                        "central"),
 
                 // Hamcrest with a version matching the range expected by Mockito
                 mavenBundle("org.hamcrest", "com.springsource.org.hamcrest.core", "1.1.0"),
