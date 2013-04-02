@@ -19,6 +19,7 @@
 package org.apache.felix.ipojo;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -84,6 +85,11 @@ public final class ConstructorInvocationContext {
   private List<Object> m_params = null;
 
   /**
+   * The name of the factory method used to construct the POJO, or {@code null} if a regular constructor must be used.
+   */
+  private String m_factoryMethod = null;
+
+  /**
    * Create a new constructor invocation context.
    * 
    * @param manager
@@ -115,6 +121,24 @@ public final class ConstructorInvocationContext {
     m_chain = chain;
     m_pojo = pojo;
     m_doCallConstructor = false;
+  }
+
+  /**
+   * Create a new pseudo-constructor invocation context. The POJO must be constructed
+   * by a factory method.
+   *
+   * @param manager
+   *          the instance manager creating the POJO instance.
+   * @param chain
+   *          the chain of constructor interceptors.
+   * @param factoryMethod
+   *          the name of the factory method.
+   */
+  ConstructorInvocationContext(InstanceManager manager, List<ConstructorInterceptor> chain, String factoryMethod) {
+    m_manager = manager;
+    m_chain = chain;
+    m_doCallConstructor = false;
+    m_factoryMethod = factoryMethod;
   }
 
   /**
@@ -191,8 +215,14 @@ public final class ConstructorInvocationContext {
     getParameters().add(0, m_manager);
 
     if (!m_doCallConstructor) {
-      // Do not create the POJO, as a custom POJO is being injected.
-      return m_pojo;
+      if (m_factoryMethod != null) {
+        // The POJO must be created by a customized factory method.
+        // As the creation process is a bit special, we delegate it to a specific method.
+        return doProceedWithFactoryMethod();
+      } else {
+        // Do not create the POJO, as a custom POJO is being injected.
+        return m_pojo;
+      }
     }
 
     // Find the suitable constructor.
@@ -207,9 +237,7 @@ public final class ConstructorInvocationContext {
 
     // Invoke the constructor
     Object[] params = m_params.toArray();
-    m_manager.onEntry(null, methodId, params);
     m_pojo = m_constructor.newInstance(params);
-    m_manager.onExit(m_pojo, methodId, m_pojo);
 
     return m_pojo;
   }
@@ -295,6 +323,76 @@ public final class ConstructorInvocationContext {
 
     return ctor;
   }
+
+  //
+  private Object doProceedWithFactoryMethod() throws Throwable {
+      // Build the pojo object with the factory-method.
+      Method factory = null;
+      // Try with the bundle context
+      try {
+          factory = m_manager.getClazz().getDeclaredMethod(m_factoryMethod, new Class[] { BundleContext.class });
+          if (! factory.isAccessible()) {
+              factory.setAccessible(true);
+          }
+          Object[] args = new Object[] { m_manager.getContext() };
+          m_pojo = factory.invoke(null, new Object[] { m_manager.getContext() });
+      } catch (NoSuchMethodException e1) {
+          // Try without the bundle context
+          try {
+              factory = m_manager.getClazz().getDeclaredMethod(m_factoryMethod, new Class[0]);
+              if (! factory.isAccessible()) {
+                  factory.setAccessible(true);
+              }
+              Object[] args = new Object[0];
+              m_pojo = factory.invoke(null, args);
+          } catch (NoSuchMethodException e2) {
+              // Error : factory-method not found
+              m_manager.getLogger().log(
+                      Logger.ERROR,
+                      "["
+                              + m_manager.getInstanceName()
+                              + "] createInstance -> Cannot invoke the factory-method (method not found) : "
+                              + e2.getMessage(), e2);
+              m_manager.stop();
+              throw new RuntimeException("Cannot create a POJO instance, the factory-method cannot be found : " + e2.getMessage());
+          }
+      }
+
+      // Now call the setInstanceManager method.
+      // Find declaring super class.
+      Class declaringClass = m_pojo.getClass();
+      Method method = null;
+      while (declaringClass != null && method == null) {
+          try {
+              method = declaringClass.getDeclaredMethod("_setInstanceManager",
+                      new Class[] { InstanceManager.class });
+          } catch (NoSuchMethodException e) {
+              //Do nothing
+          }
+
+          declaringClass = declaringClass.getSuperclass();
+      }
+
+      if (method == null) {
+          // Error : _setInstanceManager method is missing
+          m_manager.getLogger()
+                  .log(
+                          Logger.ERROR,
+                          "["
+                                  + m_manager.getInstanceName()
+                                  + "] createInstance -> Cannot invoke the factory-method (the _setInstanceManager method does not exist");
+          m_manager.stop();
+          throw new RuntimeException("Cannot create a POJO instance, the factory-method cannot be found");
+      }
+
+      if (!method.isAccessible()) {
+          method.setAccessible(true);
+      }
+      method.invoke(m_pojo, new Object[] { m_manager });
+
+      return m_pojo;
+  }
+
 
   /**
    * @return a map of arbitrary data that can be passed through the interception

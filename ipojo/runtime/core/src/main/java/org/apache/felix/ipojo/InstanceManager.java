@@ -622,19 +622,18 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             load();
         }
 
+        // Construct the interception chain for the constructor.
+        List/*<ConstructorInterceptor>*/ chain = new ArrayList(m_constructorRegistration.size());
+        for (Object o : m_constructorRegistration.values()) {
+            chain.addAll((List) o);
+        }
+        Collections.reverse(chain);
+
         // The following code doesn't need to be synchronized as is deal only with immutable fields.
         Object instance = null;
         if (m_factoryMethod == null) {
             // No factory-method, we use the constructor.
             try {
-               
-                    
-                // Construct the interception chain for the constructor.
-                List/*<ConstructorInterceptor>*/ chain = new ArrayList(m_constructorRegistration.size());
-                for (Object o : m_constructorRegistration.values()) {
-                  chain.addAll((List) o);
-                }
-                Collections.reverse(chain);
                 
                 // Construct the interception context.
                 ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain);
@@ -680,75 +679,12 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             }
         } else {
             try {
-                
-                // XXX TODO XXX call constructor interceptors !!!
-                
-                // Build the pojo object with the factory-method.
-                Method factory = null;
-                // Try with the bundle context
-                try {
-                    factory = m_clazz.getDeclaredMethod(m_factoryMethod, new Class[] { BundleContext.class });
-                    if (! factory.isAccessible()) {
-                        factory.setAccessible(true);
-                    }
-                    Object[] args = new Object[] { m_context };
-                    onEntry(null, m_className, args);
-                    instance = factory.invoke(null, new Object[] { m_context });
-                } catch (NoSuchMethodException e1) {
-                    // Try without the bundle context
-                    try {
-                        factory = m_clazz.getDeclaredMethod(m_factoryMethod, new Class[0]);
-                        if (! factory.isAccessible()) {
-                            factory.setAccessible(true);
-                        }
-                        Object[] args = new Object[0];
-                        onEntry(null, m_className, args);
-                        instance = factory.invoke(null, args);
-                    } catch (NoSuchMethodException e2) {
-                        // Error : factory-method not found
-                        m_logger.log(
-                                                  Logger.ERROR,
-                                                  "["
-                                                          + m_name
-                                                          + "] createInstance -> Cannot invoke the factory-method (method not found) : "
-                                                          + e2.getMessage(), e2);
-                        stop();
-                        throw new RuntimeException("Cannot create a POJO instance, the factory-method cannot be found : " + e2.getMessage());
-                    }
-                }
 
-                // Now call the setInstanceManager method.
-                // Find declaring super class.
-                Class declaringClass = instance.getClass();
-                Method method = null;
-                while (declaringClass != null && method == null) {
-                    try {
-                        method = declaringClass.getDeclaredMethod("_setInstanceManager",
-                                new Class[] { InstanceManager.class });
-                    } catch (NoSuchMethodException e) {
-                        //Do nothing
-                    }
+                // Construct the interception context with the specified factory method name.
+                ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain, m_factoryMethod);
 
-                    declaringClass = declaringClass.getSuperclass();
-                }
-
-                if (method == null) {
-                    // Error : _setInstanceManager method is missing
-                    m_logger
-                            .log(
-                                 Logger.ERROR,
-                                 "["
-                                         + m_name
-                                         + "] createInstance -> Cannot invoke the factory-method (the _setInstanceManager method does not exist");
-                    stop();
-                    throw new RuntimeException("Cannot create a POJO instance, the factory-method cannot be found");
-                }
-
-                if (!method.isAccessible()) {
-                    method.setAccessible(true);
-                }
-                method.invoke(instance, new Object[] { this });
-                onExit(null, m_className, instance);
+                // Proceed to the POJO creation.
+                instance = ctx.proceed();
 
             } catch (InvocationTargetException e) {
                 // Error : invocation failed
