@@ -669,5 +669,10 @@ public class Property implements FieldInterceptor, ConstructorInterceptor {
           context.getParameters().set(m_index, value);
         }
         context.proceed();
+        // Further interceptors may have injected a different value for the parameter.
+        // We ensure that the property value reflects the real injected parameter.
+        if (m_index != -1) {
+          setValue(context.getParameters().get(m_index));
+        }
       }
 }

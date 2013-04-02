@@ -558,6 +558,11 @@ public class DependencyHandler extends PrimitiveHandler implements DependencySta
             if (paramIndex != null) {
             	int index = Integer.parseInt(paramIndex);
             	dep.addConstructorInjection(index);
+            } else {
+                // Dependency does not inject service in constructor parameter.
+                // Yet it still needs to intercept the constructors since the dependency may be used in the constructor.
+                // -1 stands for "no injection"
+                dep.addConstructorInjection(-1);
             }
 
             // Check the dependency :

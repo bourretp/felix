@@ -18,6 +18,7 @@ import javax.transaction.Transaction;
 import javax.transaction.TransactionManager;
 
 import org.apache.felix.ipojo.MethodInterceptor;
+import org.apache.felix.ipojo.MethodInvocationContext;
 
 public class TransactionalMethod implements MethodInterceptor {
     
@@ -69,7 +70,6 @@ public class TransactionalMethod implements MethodInterceptor {
             
         }
     }
-    
     
     public void onEntry() throws SystemException, NotSupportedException {
         TransactionManager manager = null;
@@ -234,6 +234,23 @@ public class TransactionalMethod implements MethodInterceptor {
         }
     }
 
+    public Object onMethodCall(MethodInvocationContext context) throws Throwable {
+        Object o = context.getPojo();
+        Method member = context.getMethod();
+        Object[] objects = context.getParameters().toArray();
+
+        Object result;
+        try {
+            onEntry(o, member, objects);
+            return context.proceed();
+        } catch (Throwable throwable) {
+            onError(o, member, throwable);
+            throw throwable;
+        } finally {
+            onFinally(o, member);
+        }
+    }
+
     public void onEntry(Object o, Member member, Object[] objects) {
         try {
             onEntry();
@@ -253,10 +270,6 @@ public class TransactionalMethod implements MethodInterceptor {
             e.printStackTrace();
             throw new RuntimeException("An issue occurs during transaction management of " + method + " : " + e.getMessage());
         }
-    }
-
-    public void onExit(Object o, Member member, Object o1) {
-        // Wait for on finally.
     }
 
     public void onFinally(Object o, Member member) {

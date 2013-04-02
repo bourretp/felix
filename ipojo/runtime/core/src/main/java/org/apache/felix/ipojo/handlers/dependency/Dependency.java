@@ -42,6 +42,7 @@ import org.apache.felix.ipojo.FieldInvocationContext;
 import org.apache.felix.ipojo.FieldInvocationContext.Type;
 import org.apache.felix.ipojo.InstanceManager;
 import org.apache.felix.ipojo.MethodInterceptor;
+import org.apache.felix.ipojo.MethodInvocationContext;
 import org.apache.felix.ipojo.Nullable;
 import org.apache.felix.ipojo.PolicyServiceContext;
 import org.apache.felix.ipojo.handlers.dependency.ServiceUsage.Usage;
@@ -782,14 +783,7 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
         }
     }
 
-    /**
-     * A POJO method will be invoked.
-     * @param pojo : Pojo object
-     * @param method : called method
-     * @param args : arguments
-     * @see org.apache.felix.ipojo.MethodInterceptor#onEntry(java.lang.Object, java.lang.reflect.Member, java.lang.Object[])
-     */
-    public void onEntry(Object pojo, Member method, Object[] args) {
+    public Object onMethodCall(MethodInvocationContext context) throws Throwable {
         if (m_usage != null) {
             Usage usage = (Usage) m_usage.get();
             usage.incComponentStack(); // Increment the number of component access.
@@ -798,46 +792,18 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
                 m_usage.set(usage); // Set the Thread local as value has been modified
             }
         }
-    }
-
-    /**
-     * A POJO method has thrown an error.
-     * This method does nothing and wait for the finally.
-     * @param pojo : POJO object.
-     * @param method : Method object.
-     * @param throwable : thrown error
-     * @see org.apache.felix.ipojo.MethodInterceptor#onError(java.lang.Object, java.lang.reflect.Member, java.lang.Throwable)
-     */
-    public void onError(Object pojo, Member method, Throwable throwable) {
-        // Nothing to do  : wait onFinally
-    }
-
-    /**
-     * A POJO method has returned.
-     * @param pojo : POJO object.
-     * @param method : Method object.
-     * @param returnedObj : returned object (null for void method)
-     * @see org.apache.felix.ipojo.MethodInterceptor#onExit(java.lang.Object, java.lang.reflect.Member, java.lang.Object)
-     */
-    public void onExit(Object pojo, Member method, Object returnedObj) {
-        // Nothing to do  : wait onFinally
-    }
-
-    /**
-     * A POJO method is finished.
-     * @param pojo : POJO object.
-     * @param method : Method object.
-     * @see org.apache.felix.ipojo.MethodInterceptor#onFinally(java.lang.Object, java.lang.reflect.Member)
-     */
-    public void onFinally(Object pojo, Member method) {
-        if (m_usage != null) {
-            Usage usage = (Usage) m_usage.get();
-            usage.decComponentStack();
-            if (usage.m_stack > 0) {
-                if (usage.dec()) {
-                    // Exit the method flow => Release all objects
-                    usage.clear();
-                    m_usage.set(usage); // Set the Thread local as value has been modified
+        try {
+          return context.proceed();
+        } finally {
+            if (m_usage != null) {
+                Usage usage = (Usage) m_usage.get();
+                usage.decComponentStack();
+                if (usage.m_stack > 0) {
+                    if (usage.dec()) {
+                        // Exit the method flow => Release all objects
+                        usage.clear();
+                        m_usage.set(usage); // Set the Thread local as value has been modified
+                    }
                 }
             }
         }
@@ -1078,11 +1044,36 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
 
     public void onConstructorCall(ConstructorInvocationContext context)
         throws Throwable {
-      
-      if (m_index != -1 && m_proxyObject != null) {
-        context.getParameters().set(m_index, m_proxyObject);
+      // The constructor is going to be call, initialize the service usage.
+      if (m_usage != null) {
+          Usage usage = (Usage) m_usage.get();
+          usage.incComponentStack(); // Increment the number of component access.
+          if (usage.m_stack > 0) {
+              usage.inc();
+              m_usage.set(usage); // Set the Thread local as value has been modified
+          }
       }
-      context.proceed();
+      
+      // Manage constructor injection.
+      try {
+        if (m_index != -1 && m_proxyObject != null) {
+          context.getParameters().set(m_index, m_proxyObject);
+        }
+
+        context.proceed();
+
+      } finally {
+        // We have left the constructor, decrease the usage.
+            Usage usage = (Usage) m_usage.get();
+            usage.decComponentStack();
+            if (usage.m_stack > 0) {
+                if (usage.dec()) {
+                    // Exit the method flow => Release all objects
+                    usage.clear();
+                    m_usage.set(usage); // Set the Thread local as value has been modified
+                }
+            }
+      }
     }
 
 }

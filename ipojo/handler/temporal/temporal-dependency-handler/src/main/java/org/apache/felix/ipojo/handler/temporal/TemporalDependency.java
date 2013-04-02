@@ -26,6 +26,7 @@ import java.util.List;
 import org.apache.felix.ipojo.FieldInterceptor;
 import org.apache.felix.ipojo.FieldInvocationContext;
 import org.apache.felix.ipojo.MethodInterceptor;
+import org.apache.felix.ipojo.MethodInvocationContext;
 import org.apache.felix.ipojo.Nullable;
 import org.apache.felix.ipojo.PrimitiveHandler;
 import org.apache.felix.ipojo.handler.temporal.ServiceUsage.Usage;
@@ -225,15 +226,13 @@ public class TemporalDependency extends DependencyModel implements
             }
         }
     }
-    
+
     /**
      * A POJO method will be invoked.
-     * @param pojo : Pojo object
-     * @param method : called method
-     * @param args : arguments
-     * @see org.apache.felix.ipojo.MethodInterceptor#onEntry(java.lang.Object, java.lang.reflect.Member, java.lang.Object[])
+     * @param context : context of the method invocation
+     * @see org.apache.felix.ipojo.MethodInterceptor#onMethodCall(org.apache.felix.ipojo.MethodInvocationContext)
      */
-    public void onEntry(Object pojo, Member method, Object[] args) {
+    public Object onMethodCall(MethodInvocationContext context) throws Throwable {
         if (m_usage != null) {
             Usage usage = (Usage) m_usage.get();
             if (usage.m_stack > 0) {
@@ -241,45 +240,17 @@ public class TemporalDependency extends DependencyModel implements
                 m_usage.set(usage); // Set the Thread local as value has been modified
             }
         }
-    }
-
-    /**
-     * A POJO method has thrown an error.
-     * This method does nothing and wait for the finally.
-     * @param pojo : POJO object.
-     * @param method : Method object.
-     * @param throwable : thrown error
-     * @see org.apache.felix.ipojo.MethodInterceptor#onError(java.lang.Object, java.lang.reflect.Member, java.lang.Throwable)
-     */
-    public void onError(Object pojo, Member method, Throwable throwable) {
-        // Nothing to do  : wait onFinally
-    }
-
-    /**
-     * A POJO method has returned.
-     * @param pojo : POJO object.
-     * @param member : Method object.
-     * @param returnedObj : returned object (null for void method)
-     * @see org.apache.felix.ipojo.MethodInterceptor#onExit(java.lang.Object, java.lang.reflect.Member, java.lang.Object)
-     */
-    public void onExit(Object pojo, Member member, Object returnedObj) {
-        // Nothing to do  : wait onFinally        
-    }
-    
-    /**
-     * A POJO method is finished.
-     * @param pojo : POJO object.
-     * @param method : Method object.
-     * @see org.apache.felix.ipojo.MethodInterceptor#onFinally(java.lang.Object, java.lang.reflect.Member)
-     */
-    public void onFinally(Object pojo, Member method) {
-        if (m_usage != null) {
-            Usage usage = (Usage) m_usage.get();
-            if (usage.m_stack > 0) {
-                if (usage.dec()) {
-                    // Exit the method flow => Release all objects
-                    usage.clear();
-                    m_usage.set(usage); // Set the Thread local as value has been modified
+        try {
+            return context.proceed();
+        } finally {
+            if (m_usage != null) {
+                Usage usage = (Usage) m_usage.get();
+                if (usage.m_stack > 0) {
+                    if (usage.dec()) {
+                        // Exit the method flow => Release all objects
+                        usage.clear();
+                        m_usage.set(usage); // Set the Thread local as value has been modified
+                    }
                 }
             }
         }
