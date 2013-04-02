@@ -662,7 +662,6 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                                                   + m_name
                                                   + "] createInstance -> Cannot invoke the constructor method - the constructor throws an exception : "
                                                   + e.getTargetException().getMessage(), e.getTargetException());
-                onError(null, m_className, e.getTargetException());
                 stop();
                 throw new RuntimeException("Cannot create a POJO instance, the POJO constructor has thrown an exception: " + e.getTargetException().getMessage());
             } catch (NoSuchMethodException e) {
@@ -690,7 +689,6 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                 // Error : invocation failed
                 m_logger.log(Logger.ERROR,
                                           "[" + m_name + "] createInstance -> The factory-method throws an exception : " + e.getTargetException(), e.getTargetException());
-                onError(null, m_className, e.getTargetException());
                 stop();
                 throw new RuntimeException("Cannot create a POJO instance, the factory-method has thrown an exception: " + e.getTargetException().getMessage());
             } catch (Throwable e) {
@@ -1022,73 +1020,18 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         }
     }
 
-    /**
-     * Dispatches entry method events on registered method interceptors.
-     * This method calls the {@link PrimitiveHandler#onEntry(Object, Method, Object[])}
-     * methods on method interceptors monitoring the method.
-     * @param pojo the pojo object on which method is invoked.
-     * @param methodId the method id used to compute the {@link Method} object.
-     * @param args the argument array
-     */
-    public void onEntry(Object pojo, String methodId, Object[] args) {
-        if (m_methodRegistration == null) { // Immutable field.
-            return;
-        }
-        MethodInterceptor[] list = (MethodInterceptor[]) m_methodRegistration.get(methodId);
-        Member method = getMethodById(methodId);
-        // In case of a constructor, the method is null, and the list is null too.
-        for (int i = 0; list != null && i < list.length; i++) {
-            list[i].onEntry(pojo, method, args); // Outside a synchronized block.
-        }
-    }
+    public Object onMethod(Object pojo, String methodId, Object[] args) throws Throwable {
+        // Construct the interception chain for the method call.
+        MethodInterceptor[] list = (MethodInterceptor[]) m_methodRegistration.get(methodId); // Immutable list.
+        List<MethodInterceptor> chain = new ArrayList<MethodInterceptor>(Arrays.asList(list));
+        Collections.reverse(chain);
 
-    /**
-     * Dispatches exit method events on registered method interceptors.
-     * The given returned object is an instance of {@link Exception} if the method thrown an
-     * exception. If the given object is <code>null</code>, either the method returns <code>void</code>,
-     * or the method has returned <code>null</code>
-     * This method calls the {@link PrimitiveHandler#onExit(Object, Method, Object[])} and the
-     * {@link PrimitiveHandler#onFinally(Object, Method)} methods on method interceptors monitoring the method.
-     * @param pojo the pojo object on which method was invoked.
-     * @param methodId the method id used to compute the {@link Method} object.
-     * @param result the returned object.
-     */
-    public void onExit(Object pojo, String methodId, Object result) {
-        if (m_methodRegistration == null) {
-            return;
-        }
-        MethodInterceptor[] list = (MethodInterceptor[]) m_methodRegistration.get(methodId);
-        Member method = getMethodById(methodId);
-        for (int i = 0; list != null && i < list.length; i++) {
-            list[i].onExit(pojo, method, result);
-        }
-        for (int i = 0; list != null && i < list.length; i++) {
-            list[i].onFinally(pojo, method);
-        }
-    }
+        // Construct the interception context.
+        Method method = (Method) getMethodById(methodId);
+        MethodInvocationContext ctx = new MethodInvocationContext(chain, pojo, method, args);
 
-    /**
-     * Dispatches error method events on registered method interceptors.
-     * or the method has returned <code>null</code>
-     * This method calls the {@link PrimitiveHandler#onExit(Object, Method, Object[])} and the
-     * {@link PrimitiveHandler#onFinally(Object, Method)} methods on method interceptors monitoring
-     * the method.
-     * @param pojo the pojo object on which the method was invoked
-     * @param methodId the method id used to compute the {@link Method} object.
-     * @param error the Throwable object.
-     */
-    public void onError(Object pojo, String methodId, Throwable error) {
-        if (m_methodRegistration == null) {
-            return;
-        }
-        MethodInterceptor[] list = (MethodInterceptor[]) m_methodRegistration.get(methodId);
-        Member method = getMethodById(methodId);
-        for (int i = 0; list != null && i < list.length; i++) {
-            list[i].onError(pojo, method, error);
-        }
-        for (int i = 0; list != null && i < list.length; i++) {
-            list[i].onFinally(pojo, method);
-        }
+        // Proceed to the method call and return.
+        return ctx.proceed();
     }
 
     /**

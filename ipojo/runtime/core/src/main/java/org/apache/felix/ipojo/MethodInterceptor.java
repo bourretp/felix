@@ -38,43 +38,6 @@ import java.lang.reflect.Method;
 */
 public interface MethodInterceptor {
 
-    /**
-     * This method is called when a thread enters in a method.
-     * The given argument array is created from the method argument.
-     * @param pojo the pojo on which the method is called.
-     * @param method the invoked method.
-     * @param args the arguments array.
-     */
-    void onEntry(Object pojo, Member method, Object[] args);
-
-    /**
-     * This method is called when the execution exits a method :
-     * before a <code>return</code>.
-     * If the given returned object is <code>null</code>, either the method is
-     * <code>void</code>, or it returns <code>null</code>.
-     * This method must not modify the returned object.
-     * @param pojo the pojo on which the method exits.
-     * @param method the exiting method.
-     * @param returnedObj the the returned object (boxed for primitive type)
-     */
-    void onExit(Object pojo, Member method, Object returnedObj);
-
-    /**
-     * This method is called when the execution throws an exception in the given
-     * method.
-     * @param pojo the pojo on which the method was accessed.
-     * @param method the invoked method.
-     * @param throwable the thrown exception
-     */
-    void onError(Object pojo, Member method, Throwable throwable);
-
-    /**
-     * This method is called when the execution of a method is going to terminate :
-     * just before to throw an exception or before to return.
-     * (onError or onExit was already called).
-     * @param pojo the pojo on which the method was accessed.
-     * @param method the invoked method.
-     */
-    void onFinally(Object pojo, Member method);
+    Object onMethodCall(MethodInvocationContext methodInvocationContext) throws Throwable;
 
 }

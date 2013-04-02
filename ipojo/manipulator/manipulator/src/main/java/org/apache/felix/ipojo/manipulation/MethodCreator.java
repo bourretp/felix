@@ -68,21 +68,6 @@ public class MethodCreator extends ClassAdapter implements Opcodes {
     public static final  String METHOD_FLAG_PREFIX = "__M";
 
     /**
-     * onEntry method name.
-     */
-    private static final  String ENTRY = "onEntry";
-
-    /**
-     * onExit method name.
-     */
-    private static final  String EXIT = "onExit";
-
-    /**
-     * on Error method name.
-     */
-    private static final  String ERROR = "onError";
-
-    /**
      * onGet method name.
      */
     private static final  String GET = "onGet";
@@ -377,30 +362,14 @@ public class MethodCreator extends ClassAdapter implements Opcodes {
 
         Type returnType = Type.getReturnType(desc);
 
-        // Compute result and exception stack location
-        int result = -1;
-        int exception = -1;
-
-        //int arguments = mv.newLocal(Type.getType((new Object[0]).getClass()));
-
-        if (returnType.getSort() != Type.VOID) {
-            // The method returns something
-            result = mv.newLocal(returnType);
-            exception = mv.newLocal(Type.getType(Throwable.class));
-        } else {
-            exception = mv.newLocal(Type.getType(Throwable.class));
-        }
-
         Label l0 = new Label();
-        Label l1 = new Label();
-        Label l2 = new Label();
 
-        mv.visitTryCatchBlock(l0, l1, l2, "java/lang/Throwable");
-
+        // if (__M$something == true) { goto l0; }
         mv.visitVarInsn(ALOAD, 0);
         mv.visitFieldInsn(GETFIELD, m_owner, generateMethodFlag(name, desc), "Z");
         mv.visitJumpInsn(IFNE, l0);
 
+        // return __something(arg_1, ..., arg_n);
         mv.visitVarInsn(ALOAD, 0);
         mv.loadArgs();
         mv.visitMethodInsn(INVOKESPECIAL, m_owner, PREFIX + name, desc);
@@ -410,55 +379,19 @@ public class MethodCreator extends ClassAdapter implements Opcodes {
 
         mv.visitLabel(l0);
 
+        // return __IM.onMethod(this, "$something", [arg_1, ..., arg_n]);
         mv.visitVarInsn(ALOAD, 0);
         mv.visitFieldInsn(GETFIELD, m_owner, IM_FIELD, "Lorg/apache/felix/ipojo/InstanceManager;");
         mv.visitVarInsn(ALOAD, 0);
         mv.visitLdcInsn(generateMethodId(name, desc));
         mv.loadArgArray();
-        mv.visitMethodInsn(INVOKEVIRTUAL, "org/apache/felix/ipojo/InstanceManager", ENTRY, "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/Object;)V");
-
-        mv.visitVarInsn(ALOAD, 0);
-
-        // Do not allow argument modification : just reload arguments.
-        mv.loadArgs();
-        mv.visitMethodInsn(INVOKESPECIAL, m_owner, PREFIX + name, desc);
-
+        mv.visitMethodInsn(INVOKEVIRTUAL, "org/apache/felix/ipojo/InstanceManager", "onMethod", "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/Object;");
         if (returnType.getSort() != Type.VOID) {
-            mv.visitVarInsn(returnType.getOpcode(ISTORE), result);
-        }
-
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitFieldInsn(GETFIELD, m_owner, IM_FIELD, "Lorg/apache/felix/ipojo/InstanceManager;");
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitLdcInsn(generateMethodId(name, desc));
-        if (returnType.getSort() != Type.VOID) {
-            mv.visitVarInsn(returnType.getOpcode(ILOAD), result);
-            mv.box(returnType);
+            mv.unbox(returnType);
+            mv.visitInsn(returnType.getOpcode(IRETURN));
         } else {
-            mv.visitInsn(ACONST_NULL);
+            mv.visitInsn(RETURN);
         }
-        mv.visitMethodInsn(INVOKEVIRTUAL, "org/apache/felix/ipojo/InstanceManager", EXIT, "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/Object;)V");
-
-        mv.visitLabel(l1);
-        Label l7 = new Label();
-        mv.visitJumpInsn(GOTO, l7);
-        mv.visitLabel(l2);
-
-        mv.visitVarInsn(ASTORE, exception);
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitFieldInsn(GETFIELD, m_owner, IM_FIELD, "Lorg/apache/felix/ipojo/InstanceManager;");
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitLdcInsn(generateMethodId(name, desc));
-        mv.visitVarInsn(ALOAD, exception);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "org/apache/felix/ipojo/InstanceManager", ERROR, "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/Throwable;)V");
-        mv.visitVarInsn(ALOAD, exception);
-        mv.visitInsn(ATHROW);
-
-        mv.visitLabel(l7);
-        if (returnType.getSort() != Type.VOID) {
-            mv.visitVarInsn(returnType.getOpcode(ILOAD), result);
-        }
-        mv.visitInsn(returnType.getOpcode(IRETURN));
 
         // If we had arguments, we mark the end of the lifetime.
         Label end = null;

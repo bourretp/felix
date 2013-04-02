@@ -131,101 +131,35 @@ public abstract class PrimitiveHandler extends Handler implements FieldIntercept
     }
 
     /**
-     * Gets the object to inject as a constructor parameter
-     * @param index the index of the parameter
-     * @return the object to inject, or <code>null</code> if no
-     * objects are injected. This implementation returns <code>null</code>
-     * @see org.apache.felix.ipojo.ConstructorInterceptor#getConstructorParameter(int)
-     */
-    public Object getConstructorParameter(int index) {
-        return null;
-    }
-
-    /**
-     * Gets the type of the object to inject in the constructor parameter.
-     * This is the type looked into the Pojo class, so it must match.
-     * Returning <code>null</code> will try to get the class from the
-     * injected object, however this can be wrong (implementation instead of interface,
-     * boxed objects...) and error-prone.
-     * @param index the parameter index
-     * @return the Class object (must fit for primitive type), this implementation
-     * just returns <code>null</code>
-     * @see org.apache.felix.ipojo.ConstructorInterceptor#getConstructorParameterType(int)
-     */
-    public Class getConstructorParameterType(int index) {
-        return null;
-    }
-
-    /**
-     * Callback method called when a method will be invoked.
-     * This default implementation does nothing.
-     * @param pojo the pojo on which the method is called.
-     * @param method the method invoked.
-     * @param args the arguments array.
-     * @see MethodInterceptor#onEntry(Object, Method, Object[])
-     */
-    public void onEntry(Object pojo, Member method, Object[] args) {
-        // Nothing to do in the default implementation
-    }
-
-    /**
-     * Callback method called when a method ends.
-     * This method is called when a thread exits a method (before a return or a throw).
-     * If the given returned object is <code>null</code>, either the method is
-     * <code>void</code>, or it returns <code>null</code>.
-     * You must not modified the returned object.
-     * The default implementation does nothing.
-     * @param pojo the pojo on which the method exits.
-     * @param method the exiting method.
-     * @param returnedObj the returned object (boxed for primitive type)
-     * @see MethodInterceptor#onExit(Object, Method, Object)
-     */
-    public void onExit(Object pojo, Member method, Object returnedObj) {
-        // Nothing to do in the default implementation
-    }
-
-    /**
-     * Callback method called when an error occurs.
-     * This method is called when the execution throws an exception
-     * in the given method.
-     * The default implementation does nothing.
-     * @param pojo the pojo on which the method was accessed.
-     * @param method the invoked method.
-     * @param throwable the thrown exception
-     * @see org.apache.felix.ipojo.MethodInterceptor#onError(java.lang.Object, java.lang.reflect.Method, java.lang.Throwable)
-     */
-    public void onError(Object pojo, Member method, Throwable throwable) {
-        // Nothing to do in the default implementation
-    }
-
-    /**
-     * Callback method called when the execution of a method will terminate :
-     * just before to throw an exception or before to return.
-     * {@link MethodInterceptor#onExit(Object, Method, Object)} or
-     * {@link MethodInterceptor#onError(Object, Method, Throwable)}
-     * were already called.
-     * This default implementation does nothing.
-     * @param pojo the pojo on which the method was accessed.
-     * @param method the invoked method.
-     */
-    public void onFinally(Object pojo, Member method) {
-        // Nothing to do in the default implementation
-    }
-
-    /**
-     * Callback method called when an instance of the component is created, but
-     * before someone can use it.
-     * The default implementation does nothing.
-     * @param instance the created instance
+     * Callback method called when an instance of the component is being created.
+     * The default implementation just proceeds.
+     * @param context the context of the instance construction
      */
     public void onConstructorCall(ConstructorInvocationContext context) throws Throwable {
       // Default implementation
       context.proceed();
     }
-    
+
+    /**
+     * Callback method called when a field of an instance of the component is being accessed.
+     * The default implementation just proceeds.
+     * @param context the context of the field access
+     * @param value the value
+     */
     public void onFieldAccess(FieldInvocationContext context, Object value) throws Throwable {
       // Default implementation
       context.proceed(value);
+    }
+
+    /**
+     * Callback method called when a field of an instance of the component is being accessed.
+     * The default implementation just proceeds.
+     * @param context the context of the method invocation
+     * @return the result of the method invocation
+     */
+    public Object onMethodCall(MethodInvocationContext context) throws Throwable {
+      // Default implementation
+      return context.proceed();
     }
 
 }

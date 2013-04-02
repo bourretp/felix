@@ -18,6 +18,7 @@
  */
 package org.apache.felix.ipojo;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,6 +30,7 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 
+import org.apache.felix.ipojo.util.Callback;
 import org.apache.felix.ipojo.util.Property;
 
 /**
@@ -102,6 +104,10 @@ public final class MethodInvocationContext {
         .asList(m_method.getParameterTypes()));
     m_params = new MethodParamList(paramTypes, Arrays.asList(params));
   }
+  
+  public Object getPojo() {
+    return m_pojo;
+  }
 
   /**
    * @return the method that is being called.
@@ -131,10 +137,6 @@ public final class MethodInvocationContext {
    *           if the method has thrown an exception.
    */
   public Object proceed() throws Throwable {
-    if (m_pojo != null) {
-      throw new IllegalStateException(
-          "MethodInvocationContext.proceed() called multiple times");
-    }
 
     if (m_currentPosition == m_chain.size()) {
       // No more interceptors
@@ -178,9 +180,20 @@ public final class MethodInvocationContext {
 
     // Fix the parameters.
     fixParameters();
+    
+    // Retrieve the real POJO method to invoke.
+    Method realMethod = m_pojo.getClass().getDeclaredMethod("__M_" + m_method.getName(), m_method.getParameterTypes());
 
     // Invoke the method
-    return m_method.invoke(m_pojo, m_params.toArray());
+    if (!realMethod.isAccessible()) {
+      realMethod.setAccessible(true);
+    }
+    try {
+      return realMethod.invoke(m_pojo, m_params.toArray());
+    } catch (InvocationTargetException e) {
+        throw e.getTargetException();
+    }
+
   }
 
   /**
@@ -323,6 +336,11 @@ public final class MethodInvocationContext {
           throw new UnsupportedOperationException();
         }
       };
+    }
+    
+    @Override
+    public String toString() {
+      return m_params.toString();
     }
 
     // Forbidden write methods.
