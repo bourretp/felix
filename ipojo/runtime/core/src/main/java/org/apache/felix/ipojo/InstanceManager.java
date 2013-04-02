@@ -109,6 +109,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * The map [field, {@link FieldInterceptor} list] storing interceptors monitoring fields.
      * Once configured, this map can't change.
      */
+    // TODO Add priority index
     private Map m_fieldRegistration;
 
     /**
@@ -116,6 +117,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * by the method.
      * Once configured, this map can't change.
      */
+    // TODO Add priority index
     private Map m_methodRegistration;
 
     /**
@@ -123,7 +125,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * the constructors.
      * Once configured, this list can't change.
      */
-    private final SortedMap /*<Integer,List<ConstructorInterceptor>>*/ m_constructorRegistration = new TreeMap();;
+    private final SortedMap /*<Integer,List<ConstructorInterceptor>>*/ m_constructorRegistration = new TreeMap();
 
     /**
      * The manipulated class.
@@ -841,8 +843,9 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * @param fields the field metadata list
      * @param methods the method metadata list
      * @deprecated use {@link InstanceManager#register(FieldMetadata, FieldInterceptor)}
-     * and {@link InstanceManager#register(FieldMetadata, MethodInterceptor)} instead.
+     * and {@link InstanceManager#register(MethodMetadata, MethodInterceptor)} instead.
      */
+    // TODO Think about priority of interceptors here (LOWEST?)
     public void register(PrimitiveHandler handler, FieldMetadata[] fields, MethodMetadata[] methods) {
         for (int i = 0; fields != null && i < fields.length; i++) {
             register(fields[i], handler);
@@ -860,6 +863,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * @param field the field to monitor
      * @param interceptor the field interceptor object
      */
+    // TODO Add priority parameter
     public void register(FieldMetadata field, FieldInterceptor interceptor) {
         if (m_fieldRegistration == null) {
             m_fieldRegistration = new HashMap();
@@ -889,6 +893,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * @param method the field to monitor
      * @param interceptor the field interceptor object
      */
+    // TODO Add priority parameter
     public void register(MethodMetadata method, MethodInterceptor interceptor) {
         if (m_methodRegistration == null) {
             m_methodRegistration = new HashMap();
