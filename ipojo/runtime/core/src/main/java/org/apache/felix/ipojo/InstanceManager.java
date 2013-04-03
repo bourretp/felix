@@ -625,9 +625,12 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         }
 
         // Construct the interception chain for the constructor.
-        List/*<ConstructorInterceptor>*/ chain = new ArrayList(m_constructorRegistration.size());
-        for (Object o : m_constructorRegistration.values()) {
-            chain.addAll((List) o);
+        List/*<ConstructorInterceptor>*/ chain;
+        synchronized (m_constructorRegistration) {
+            chain = new ArrayList(m_constructorRegistration.size());
+            for (Object o : m_constructorRegistration.values()) {
+                chain.addAll((List) o);
+            }
         }
         Collections.reverse(chain);
 
@@ -815,24 +818,24 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         
         
         // Call constructor interceptors even if no actual constructor has been called.
-        if (m_constructorRegistration != null) {
-          List/*<ConstructorInterceptor>*/ chain = new ArrayList(m_constructorRegistration.size());
-          for (Object o : m_constructorRegistration.values()) {
-            chain.addAll((List) o);
-          }
-          Collections.reverse(chain);
-          
-          // Construct the interception context.
-          ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain, obj);
-          
-          // Proceed to the POJO creation.
-          try {
-            ctx.proceed();
-          } catch (Throwable e) {
-            m_logger.log(Logger.ERROR, "Error in constructor interception chain", e);
-          }
+        List/*<ConstructorInterceptor>*/ chain;
+        synchronized (m_constructorRegistration) {
+            chain = new ArrayList(m_constructorRegistration.size());
+            for (Object o : m_constructorRegistration.values()) {
+                chain.addAll((List) o);
+            }
         }
-        
+        Collections.reverse(chain);
+
+        // Construct the interception context.
+        ConstructorInvocationContext ctx = new ConstructorInvocationContext(this, chain, obj);
+
+        // Proceed to the POJO creation.
+        try {
+          ctx.proceed();
+        } catch (Throwable e) {
+            m_logger.log(Logger.ERROR, "Error in constructor interception chain", e);
+        }
     }
 
     /**
@@ -927,13 +930,15 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * */
     public void register(int priority, ConstructorInterceptor injector) throws ConfigurationException {
         Integer key = new Integer(priority);
-        List/*<ConstructorInterceptor>*/ list = (List) m_constructorRegistration.get(key);
-        if (list == null) {
-          list = new ArrayList(1);
-          list.add(injector);
-          m_constructorRegistration.put(key, list);
-        } else {
-          list.add(injector);
+        synchronized (m_constructorRegistration) {
+            List/*<ConstructorInterceptor>*/ list = (List) m_constructorRegistration.get(key);
+            if (list == null) {
+                list = new ArrayList(1);
+                list.add(injector);
+                m_constructorRegistration.put(key, list);
+            } else {
+                list.add(injector);
+            }
         }
     }
 
