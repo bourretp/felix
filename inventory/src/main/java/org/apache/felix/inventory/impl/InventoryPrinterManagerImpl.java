@@ -5,9 +5,9 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
- *
+ * 
  * http://www.apache.org/licenses/LICENSE-2.0
- *
+ * 
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -70,7 +70,7 @@ public class InventoryPrinterManagerImpl implements ServiceTrackerCustomizer
 
     /**
      * Create the inventory printer manager
-     *
+     * 
      * @param btx Bundle Context
      * @throws InvalidSyntaxException Should only happen if we have an error in
      *             the code
@@ -78,9 +78,7 @@ public class InventoryPrinterManagerImpl implements ServiceTrackerCustomizer
     public InventoryPrinterManagerImpl(final BundleContext btx) throws InvalidSyntaxException
     {
         this.bundleContext = btx;
-        this.cfgPrinterTracker = new ServiceTracker(this.bundleContext, this.bundleContext.createFilter("(&("
-            + InventoryPrinter.CONFIG_PRINTER_MODES + "=*)" + "(" + InventoryPrinter.CONFIG_NAME + "=*)" + "("
-            + InventoryPrinter.CONFIG_TITLE + "=*))"), this);
+        this.cfgPrinterTracker = new ServiceTracker(this.bundleContext, InventoryPrinter.SERVICE, this);
         this.cfgPrinterTracker.open();
 
         final Dictionary props = new Hashtable();
@@ -126,8 +124,9 @@ public class InventoryPrinterManagerImpl implements ServiceTrackerCustomizer
         final Object obj = this.bundleContext.getService(reference);
         if (obj != null)
         {
-            this.addService(reference, obj);
+            this.addService(reference, (InventoryPrinter) obj);
         }
+
         return obj;
     }
 
@@ -138,10 +137,20 @@ public class InventoryPrinterManagerImpl implements ServiceTrackerCustomizer
     public void modifiedService(final ServiceReference reference, final Object service)
     {
         this.removeService(reference);
-        this.addService(reference, service);
+        this.addService(reference, (InventoryPrinter) service);
     }
 
-    private void addService(final ServiceReference reference, final Object obj)
+    /**
+     * @see org.osgi.util.tracker.ServiceTrackerCustomizer#removedService(org.osgi.framework.ServiceReference,
+     *      java.lang.Object)
+     */
+    public void removedService(final ServiceReference reference, final Object service)
+    {
+        this.removeService(reference);
+        this.bundleContext.ungetService(reference);
+    }
+
+    private void addService(final ServiceReference reference, final InventoryPrinter obj)
     {
         final InventoryPrinterDescription desc = new InventoryPrinterDescription(reference);
 
@@ -166,16 +175,7 @@ public class InventoryPrinterManagerImpl implements ServiceTrackerCustomizer
         }
         if (valid)
         {
-            final InventoryPrinterAdapter adapter = InventoryPrinterAdapter.createAdapter(desc, obj);
-            if (adapter == null)
-            {
-                Activator.log(null, LogService.LOG_INFO, "Ignoring inventory printer - printer method is missing: "
-                    + reference, null);
-            }
-            else
-            {
-                this.addAdapter(adapter);
-            }
+            this.addAdapter(new InventoryPrinterAdapter(desc, obj));
         }
     }
 
@@ -236,16 +236,6 @@ public class InventoryPrinterManagerImpl implements ServiceTrackerCustomizer
         }
     }
 
-    /**
-     * @see org.osgi.util.tracker.ServiceTrackerCustomizer#removedService(org.osgi.framework.ServiceReference,
-     *      java.lang.Object)
-     */
-    public void removedService(final ServiceReference reference, final Object service)
-    {
-        this.removeService(reference);
-        this.bundleContext.ungetService(reference);
-    }
-
     private void removeService(final ServiceReference reference)
     {
         synchronized (this.allAdapters)
@@ -291,7 +281,7 @@ public class InventoryPrinterManagerImpl implements ServiceTrackerCustomizer
 
     /**
      * Get all inventory printer handlers.
-     *
+     * 
      * @return A list of handlers - might be empty.
      */
     public InventoryPrinterHandler[] getAllHandlers()
@@ -302,7 +292,7 @@ public class InventoryPrinterManagerImpl implements ServiceTrackerCustomizer
 
     /**
      * Get all handlers supporting the mode.
-     *
+     * 
      * @return A list of handlers - might be empty.
      */
     public InventoryPrinterHandler[] getHandlers(final PrinterMode mode)
@@ -322,7 +312,7 @@ public class InventoryPrinterManagerImpl implements ServiceTrackerCustomizer
 
     /**
      * Return a handler for the unique name.
-     *
+     * 
      * @return The corresponding handler or <code>null</code>.
      */
     public InventoryPrinterHandler getHandler(final String name)

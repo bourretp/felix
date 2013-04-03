@@ -23,12 +23,24 @@ import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.Provider;
 import java.security.Security;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Hashtable;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 import javax.security.auth.Subject;
 import javax.security.auth.callback.CallbackHandler;
-import javax.security.auth.login.*;
+import javax.security.auth.login.AppConfigurationEntry;
+import javax.security.auth.login.Configuration;
+import javax.security.auth.login.ConfigurationSpi;
+import javax.security.auth.login.LoginContext;
+import javax.security.auth.login.LoginException;
 
 import org.apache.felix.jaas.LoginContextFactory;
 import org.apache.felix.jaas.LoginModuleFactory;
@@ -37,6 +49,7 @@ import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.ConfigurationPolicy;
 import org.apache.felix.scr.annotations.Property;
 import org.apache.felix.scr.annotations.PropertyOption;
+import org.apache.sling.commons.osgi.PropertiesUtil;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.ServiceReference;
@@ -72,6 +85,14 @@ public class ConfigSpiOsgi extends ConfigurationSpi implements ManagedService,
 
     private final Logger log;
 
+    /**
+     * This is the name of application/realm used by LoginContext if no
+     * AppConfigurationEntry is found for the appName which is passed while constructing it.
+     *
+     * In case it does not find any config it looks for config entry for an app named 'other'
+     */
+    private static final String DEFAULT_REALM_NAME = "other";
+
     @Property
     private static final String JAAS_DEFAULT_REALM_NAME = "jaas.defaultRealmName";
     private String defaultRealmName;
@@ -106,10 +127,11 @@ public class ConfigSpiOsgi extends ConfigurationSpi implements ManagedService,
 
     private ServiceRegistration spiReg;
 
-    public ConfigSpiOsgi(BundleContext context, Logger log)
-    {
+    public ConfigSpiOsgi(BundleContext context, Logger log) throws ConfigurationException {
         this.context = context;
         this.log = log;
+
+        updated(getDefaultConfig());
         this.tracker = new ServiceTracker(context, LoginModuleFactory.class.getName(),
             this);
 
@@ -131,11 +153,6 @@ public class ConfigSpiOsgi extends ConfigurationSpi implements ManagedService,
     public LoginContext createLoginContext(String realm, Subject subject,
         CallbackHandler handler) throws LoginException
     {
-        if (realm == null)
-        {
-            realm = defaultRealmName;
-        }
-
         final Thread currentThread = Thread.currentThread();
         final ClassLoader cl = currentThread.getContextClassLoader();
         try
@@ -259,13 +276,8 @@ public class ConfigSpiOsgi extends ConfigurationSpi implements ManagedService,
         {
             return;
         }
-        String newDefaultRealmName = Util.toString(
-            properties.get(JAAS_DEFAULT_REALM_NAME), null);
-        if (newDefaultRealmName == null)
-        {
-            throw new IllegalArgumentException(
-                "Default JAAS realm name must be specified");
-        }
+        String newDefaultRealmName = PropertiesUtil.toString(
+                properties.get(JAAS_DEFAULT_REALM_NAME), DEFAULT_REALM_NAME);
 
         if (!newDefaultRealmName.equals(defaultRealmName))
         {
@@ -273,7 +285,7 @@ public class ConfigSpiOsgi extends ConfigurationSpi implements ManagedService,
             recreateConfigs();
         }
 
-        String newProviderName = Util.toString(properties.get(JAAS_CONFIG_PROVIDER_NAME),
+        String newProviderName = PropertiesUtil.toString(properties.get(JAAS_CONFIG_PROVIDER_NAME),
             DEFAULT_CONFIG_PROVIDER_NAME);
 
         deregisterProvider(jaasConfigProviderName);
@@ -285,7 +297,7 @@ public class ConfigSpiOsgi extends ConfigurationSpi implements ManagedService,
 
     private void manageGlobalConfiguration(Dictionary props)
     {
-        String configPolicy = Util.toString(props.get(JAAS_CONFIG_POLICY),
+        String configPolicy = PropertiesUtil.toString(props.get(JAAS_CONFIG_POLICY),
                 GlobalConfigurationPolicy.DEFAULT.name());
         configPolicy = Util.trimToNull(configPolicy);
 
@@ -330,6 +342,21 @@ public class ConfigSpiOsgi extends ConfigurationSpi implements ManagedService,
         {
             Configuration.setConfiguration(originalConfig);
         }
+    }
+
+    private Dictionary<String,String> getDefaultConfig() throws ConfigurationException
+    {
+        //Determine default config. Value can still be overridden by BundleContext properties
+        Dictionary<String,String> dict = new Hashtable<String,String>();
+        put(dict,JAAS_DEFAULT_REALM_NAME,DEFAULT_REALM_NAME);
+        put(dict,JAAS_CONFIG_PROVIDER_NAME,DEFAULT_CONFIG_PROVIDER_NAME);
+        put(dict, JAAS_CONFIG_POLICY, GlobalConfigurationPolicy.DEFAULT.name());
+        return dict;
+    }
+
+    private void put(Dictionary<String,String> dict, String key, String defaultValue)
+    {
+        dict.put(key,PropertiesUtil.toString(context.getProperty(key),defaultValue));
     }
 
     // --------------JAAS/JCA/Security ----------------------------------------

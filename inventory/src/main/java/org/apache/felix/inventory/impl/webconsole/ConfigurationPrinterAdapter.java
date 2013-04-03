@@ -18,6 +18,7 @@ package org.apache.felix.inventory.impl.webconsole;
 
 import java.io.PrintWriter;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -25,7 +26,6 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.felix.inventory.PrinterMode;
-import org.apache.felix.inventory.impl.ClassUtils;
 import org.osgi.framework.ServiceReference;
 
 /**
@@ -86,12 +86,12 @@ public class ConfigurationPrinterAdapter
             {
                 modes = ref.getProperty(ConsoleConstants.PROPERTY_MODES);
             }
-            final Method titleMethod = ClassUtils.searchMethod(service.getClass(), "getTitle", null);
+            final Method titleMethod = getMethod(service.getClass(), "getTitle", null);
             if (titleMethod == null)
             {
                 return null;
             }
-            title = (String) ClassUtils.invoke(service, titleMethod, null);
+            title = (String) invoke(service, titleMethod, null);
         }
         else
         {
@@ -103,7 +103,7 @@ public class ConfigurationPrinterAdapter
         Method printMethod = null;
 
         // first: printConfiguration(PrintWriter, String)
-        final Method method2Params = ClassUtils.searchMethod(service.getClass(), "printConfiguration", new Class[]
+        final Method method2Params = getMethod(service.getClass(), "printConfiguration", new Class[]
             { PrintWriter.class, String.class });
         if (method2Params != null)
         {
@@ -114,7 +114,7 @@ public class ConfigurationPrinterAdapter
         if (cfgPrinter == null)
         {
             // second: printConfiguration(PrintWriter)
-            final Method method1Params = ClassUtils.searchMethod(service.getClass(), "printConfiguration", new Class[]
+            final Method method1Params = getMethod(service.getClass(), "printConfiguration", new Class[]
                 { PrintWriter.class });
             if (method1Params != null)
             {
@@ -185,8 +185,8 @@ public class ConfigurationPrinterAdapter
                 }
             }
 
-            return new ConfigurationPrinterAdapter(cfgPrinter, printMethod, ClassUtils.searchMethod(
-                cfgPrinter.getClass(), "getAttachments", new Class[]
+            return new ConfigurationPrinterAdapter(cfgPrinter, printMethod, getMethod(cfgPrinter.getClass(),
+                "getAttachments", new Class[]
                     { String.class }), title, (label instanceof String ? (String) label : null), modesArray,
                 !webUnescaped);
         }
@@ -249,12 +249,12 @@ public class ConfigurationPrinterAdapter
     {
         if (printMethod.getParameterTypes().length > 1)
         {
-            ClassUtils.invoke(this.printer, this.printMethod, new Object[]
+            invoke(this.printer, this.printMethod, new Object[]
                 { pw, mode });
         }
         else
         {
-            ClassUtils.invoke(this.printer, this.printMethod, new Object[]
+            invoke(this.printer, this.printMethod, new Object[]
                 { pw });
         }
     }
@@ -265,7 +265,7 @@ public class ConfigurationPrinterAdapter
         URL[] attachments = null;
         if (attachmentMethod != null)
         {
-            attachments = (URL[]) ClassUtils.invoke(printer, attachmentMethod, new Object[]
+            attachments = (URL[]) invoke(printer, attachmentMethod, new Object[]
                 { ConsoleConstants.MODE_ZIP });
         }
         return attachments;
@@ -277,5 +277,40 @@ public class ConfigurationPrinterAdapter
     public String toString()
     {
         return title + " (" + printer.getClass() + ")";
+    }
+
+    private static Method getMethod(final Class clazz, final String mName, final Class[] params)
+    {
+        try
+        {
+            final Method m = clazz.getDeclaredMethod(mName, params);
+            if (Modifier.isPublic(m.getModifiers()))
+            {
+                return m;
+            }
+        }
+        catch (Throwable nsme)
+        {
+            // ignore, we catch Throwable above to not only catch
+            // NoSuchMethodException
+            // but also other ones like ClassDefNotFoundError etc.
+        }
+        return null;
+    }
+
+    /**
+     * Invoke the method on the printer with the arguments.
+     */
+    private static Object invoke(final Object obj, final Method m, final Object[] args)
+    {
+        try
+        {
+            return m.invoke(obj, args);
+        }
+        catch (final Throwable e)
+        {
+            // ignore
+        }
+        return null;
     }
 }

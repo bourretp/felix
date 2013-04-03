@@ -19,16 +19,20 @@
 
 package org.apache.felix.jaas.internal;
 
-import static org.apache.felix.jaas.internal.Util.trimToNull;
-
-import java.util.*;
+import java.util.Dictionary;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import org.apache.felix.jaas.LoginModuleFactory;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Property;
 import org.apache.felix.scr.annotations.PropertyOption;
 import org.apache.felix.scr.annotations.PropertyUnbounded;
+import org.apache.sling.commons.osgi.PropertiesUtil;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.ServiceRegistration;
@@ -36,7 +40,14 @@ import org.osgi.service.cm.ConfigurationException;
 import org.osgi.service.cm.ManagedServiceFactory;
 import org.osgi.service.log.LogService;
 
-@Component(label = "%jaas.name", description = "%jaas.description", metatype = true, ds = false, name = JaasConfigFactory.SERVICE_PID, configurationFactory = true)
+import static org.apache.felix.jaas.internal.Util.trimToNull;
+
+@Component(label = "%jaas.name",
+        description = "%jaas.description",
+        metatype = true,
+        ds = false,
+        name = JaasConfigFactory.SERVICE_PID,
+        configurationFactory = true)
 public class JaasConfigFactory implements ManagedServiceFactory
 {
 
@@ -67,7 +78,7 @@ public class JaasConfigFactory implements ManagedServiceFactory
 
     private final BundleContext context;
 
-    private final Map<String, ServiceRegistration> registrations = new ConcurrentHashMap<String, ServiceRegistration>();
+    private final ConcurrentMap<String, ServiceRegistration> registrations = new ConcurrentHashMap<String, ServiceRegistration>();
 
     public JaasConfigFactory(BundleContext context, LoginModuleCreator factory, Logger log)
     {
@@ -91,13 +102,14 @@ public class JaasConfigFactory implements ManagedServiceFactory
     @Override
     public void updated(String pid, Dictionary config) throws ConfigurationException
     {
-        String className = trimToNull(Util.toString(config.get(JAAS_CLASS_NAME), null));
-        String flag = trimToNull(Util.toString(config.get(JAAS_CONTROL_FLAG), "required"));
-        int ranking = Util.toInteger(config.get(JAAS_RANKING), 0);
+        String className = trimToNull(PropertiesUtil.toString(config.get(JAAS_CLASS_NAME), null));
+        String flag = trimToNull(PropertiesUtil.toString(config.get(JAAS_CONTROL_FLAG), "required"));
+        int ranking = PropertiesUtil.toInteger(config.get(JAAS_RANKING), 0);
 
-        String[] props = Util.toStringArray(config.get(JAAS_OPTIONS), new String[0]);
-        Map options = toMap(props);
-        String realmName = trimToNull(Util.toString(config.get(JAAS_REALM_NAME), null));
+        //TODO support system property substitution e.g. ${user.home}
+        //in property values
+        Map options = PropertiesUtil.toMap(config.get(JAAS_OPTIONS), new String[0]);
+        String realmName = trimToNull(PropertiesUtil.toString(config.get(JAAS_REALM_NAME), null));
 
         if (className == null)
         {
@@ -119,7 +131,13 @@ public class JaasConfigFactory implements ManagedServiceFactory
 
         ServiceRegistration reg = context.registerService(
             LoginModuleFactory.class.getName(), lmf, new Properties());
-        registrations.put(pid, reg);
+        ServiceRegistration oldReg = registrations.put(pid, reg);
+
+        //Remove earlier registration if any
+        if(oldReg != null)
+        {
+            oldReg.unregister();
+        }
     }
 
     @Override
@@ -133,28 +151,6 @@ public class JaasConfigFactory implements ManagedServiceFactory
     }
 
     //~----------------------------------- Utility Methods
-
-    private static Map<String, Object> toMap(String[] props)
-    {
-        //TODO support system property substitution e.g. ${user.home}
-        //in property values
-        Map<String, Object> result = new HashMap<String, Object>();
-        for (String kv : props)
-        {
-            int indexOfEqual = kv.indexOf('=');
-            if (indexOfEqual > 0)
-            {
-                String key = trimToNull(kv.substring(0, indexOfEqual));
-                String value = trimToNull(kv.substring(indexOfEqual + 1));
-                if (key != null && value != null)
-                {
-                    result.put(key, value);
-                }
-            }
-        }
-        return result;
-    }
-
     @SuppressWarnings("unchecked")
     private static Map convertToMap(Dictionary config)
     {
