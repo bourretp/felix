@@ -899,26 +899,40 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
     }
 
     /**
-     * Registers a constructor injector.
-     * The constructor injector will be called when a pojo object is going to be created.
+     * Registers a constructor interceptor.
+     * The constructor interceptor will be called when a pojo object is going to be created.
      * If two interceptors have the same priority, then registration order takes precedence.
      * 
-     * @param priority the priority of the injector.
-     * @param injector the injector object.
-     * @throws ConfigurationException if the given index is already injected by another injector
+     * @param priority the priority of the interceptor.
+     * @param interceptor the constructor interceptor object.
+     * @throws NullPointerException if {@code interceptor} is null.
      * */
-    public void register(int priority, ConstructorInterceptor injector) throws ConfigurationException {
+    public void register(int priority, ConstructorInterceptor interceptor) {
+        if (interceptor == null) {
+            throw new NullPointerException("null interceptor");
+        }
         Integer key = new Integer(priority);
         synchronized (m_constructorRegistration) {
             List<ConstructorInterceptor> list = m_constructorRegistration.get(key);
             if (list == null) {
                 list = new ArrayList<ConstructorInterceptor>(1);
-                list.add(injector);
+                list.add(interceptor);
                 m_constructorRegistration.put(key, list);
             } else {
-                list.add(injector);
+                list.add(interceptor);
             }
         }
+    }
+
+    /**
+     * Registers a constructor interceptor with the lowest priority.
+     * Invoking this method is equivalent to invoking {@code register(Integer.MAX_VALUE, interceptor)}
+     *
+     * @param interceptor the constructor interceptor object.
+     *                @see #register(int, ConstructorInterceptor)
+     * */
+    public void register(ConstructorInterceptor interceptor) {
+        register(Integer.MAX_VALUE, interceptor);
     }
 
     /**
