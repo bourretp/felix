@@ -839,27 +839,6 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
     }
 
     /**
-     * Registers an handler.
-     * This methods is called by handler wanting to monitor
-     * fields and/or methods of the implementation class.
-     * @param handler the handler to register
-     * @param fields the field metadata list
-     * @param methods the method metadata list
-     * @deprecated use {@link InstanceManager#register(FieldMetadata, FieldInterceptor)}
-     * and {@link InstanceManager#register(MethodMetadata, MethodInterceptor)} instead.
-     */
-    // TODO Think about priority of interceptors here (LOWEST?)
-    public void register(PrimitiveHandler handler, FieldMetadata[] fields, MethodMetadata[] methods) {
-        for (int i = 0; fields != null && i < fields.length; i++) {
-            register(fields[i], handler);
-        }
-        for (int i = 0; methods != null && i < methods.length; i++) {
-            register(methods[i], handler);
-        }
-
-    }
-
-    /**
      * Registers a field interceptor.
      * A field interceptor will be notified of field access of the
      * implementation class. Note that handlers are field interceptors.
