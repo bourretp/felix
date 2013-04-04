@@ -106,19 +106,14 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
     private final BundleContext m_context;
 
     /**
-     * The map [field, {@link FieldInterceptor} list] storing interceptors monitoring fields.
-     * Once configured, this map can't change.
+     * The map [field, [priority, {@link FieldInterceptor} list]] storing interceptors monitoring fields.
      */
-    // TODO Add priority index
-    private Map m_fieldRegistration;
+    private Map<String, SortedMap<Integer, List<FieldInterceptor>>> m_fieldRegistration = new HashMap<String, SortedMap<Integer, List<FieldInterceptor>>>();
 
     /**
-     * the map [method identifier, {@link MethodInterceptor} list] interested
-     * by the method.
-     * Once configured, this map can't change.
+     * The map [method identifier, [priority, {@link MethodInterceptor} list]]storing interceptors monitoring methods.
      */
-    // TODO Add priority index
-    private Map m_methodRegistration;
+    private Map<String, SortedMap<Integer, List<MethodInterceptor>>> m_methodRegistration = new HashMap<String, SortedMap<Integer, List<MethodInterceptor>>>();
 
     /**
      * the map (sorted by priority) of {@link ConstructorInterceptor}s interested by
@@ -712,7 +707,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * This method needs to be called once only for singleton provided service.
      * This methods call the {@link InstanceManager#createObject()} method, and adds
      * the created object to the {@link InstanceManager#m_pojoObjects} list. Then,
-     * it calls the {@link PrimitiveHandler#onCreation(Object)} methods on attached
+     * it calls the {@link PrimitiveHandler#onConstructorCall(ConstructorInvocationContext)} methods on attached
      * handlers.
      * @return a new instance or <code>null</code> if an error occurs during the
      * creation.
@@ -746,13 +741,13 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * If no object created, creates and returns a POJO object.
      * This methods call the {@link InstanceManager#createObject()} method, and adds
      * the created object to the {@link InstanceManager#m_pojoObjects} list. Then,
-     * it calls the {@link PrimitiveHandler#onCreation(Object)} methods on attached
+     * it calls the {@link PrimitiveHandler#onConstructorCall(ConstructorInvocationContext)} methods on attached
      * handlers.
      * <br/>
      * <p>
      * <b>TODO</b> this method has a potential race condition if two threads require a pojo
      * object at the same time. Only one object will be created, but the second thread
-     * can receive the created object before the {@link PrimitiveHandler#onCreation(Object)}
+     * can receive the created object before the {@link PrimitiveHandler#onConstructorCall(ConstructorInvocationContext)}
      * calls.
      * </p>
      * @return the pojo object of the component instance to use for singleton component
@@ -842,60 +837,82 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * Registers a field interceptor.
      * A field interceptor will be notified of field access of the
      * implementation class. Note that handlers are field interceptors.
+     * @param priority the priority of the interceptor.
      * @param field the field to monitor
      * @param interceptor the field interceptor object
+     * @throws NullPointerException if {@code interceptor} is null.
      */
-    // TODO Add priority parameter
-    public void register(FieldMetadata field, FieldInterceptor interceptor) {
-        if (m_fieldRegistration == null) {
-            m_fieldRegistration = new HashMap();
-            m_fieldRegistration.put(field.getFieldName(), new FieldInterceptor[] { interceptor });
-        } else {
-            FieldInterceptor[] list = (FieldInterceptor[]) m_fieldRegistration.get(field.getFieldName());
-            if (list == null) {
-                m_fieldRegistration.put(field.getFieldName(), new FieldInterceptor[] { interceptor });
-            } else {
-                for (int j = 0; j < list.length; j++) {
-                    if (list[j] == interceptor) {
-                        return;
-                    }
-                }
-                FieldInterceptor[] newList = new FieldInterceptor[list.length + 1];
-                System.arraycopy(list, 0, newList, 0, list.length);
-                newList[list.length] = interceptor;
-                m_fieldRegistration.put(field.getFieldName(), newList);
-            }
+    public void register(int priority, FieldMetadata field, FieldInterceptor interceptor) {
+        if (interceptor == null) {
+            throw new NullPointerException("null interceptor");
         }
+        synchronized (m_fieldRegistration) {
+            // TODO (?) check if the same interceptor is not already registered
+            SortedMap<Integer, List<FieldInterceptor>> fmap = m_fieldRegistration.get(field.getFieldName());
+            if (fmap == null) {
+                fmap = new TreeMap<Integer, List<FieldInterceptor>>();
+                m_fieldRegistration.put(field.getFieldName(), fmap);
+            }
+            List<FieldInterceptor> list = fmap.get(priority);
+            if (list == null) {
+                list = new ArrayList<FieldInterceptor>(1);
+                fmap.put(priority, list);
+            }
+            list.add(interceptor);
+        }
+    }
+
+    /**
+     * Registers a field interceptor with the lowest priority.
+     * Invoking this method is equivalent to invoking {@code register(Integer.MAX_VALUE, field, interceptor)}
+     *
+     * @param field the field to monitor
+     * @param interceptor the field interceptor object.
+     * @see #register(int, FieldMetadata, FieldInterceptor)
+     */
+    public void register(FieldMetadata field, FieldInterceptor interceptor) {
+        register(Integer.MAX_VALUE, field, interceptor);
     }
 
     /**
      * Registers a method interceptor.
      * A method interceptor will be notified of method entries, exits
      * and errors. Note that handlers are method interceptors.
-     * @param method the field to monitor
-     * @param interceptor the field interceptor object
+     * @param priority the priority of the interceptor
+     * @param method the method to monitor
+     * @param interceptor the method interceptor object
+     * @throws NullPointerException if {@code interceptor} is null.
      */
-    // TODO Add priority parameter
-    public void register(MethodMetadata method, MethodInterceptor interceptor) {
-        if (m_methodRegistration == null) {
-            m_methodRegistration = new HashMap();
-            m_methodRegistration.put(method.getMethodIdentifier(), new MethodInterceptor[] { interceptor });
-        } else {
-            MethodInterceptor[] list = (MethodInterceptor[]) m_methodRegistration.get(method.getMethodIdentifier());
-            if (list == null) {
-                m_methodRegistration.put(method.getMethodIdentifier(), new MethodInterceptor[] { interceptor });
-            } else {
-                for (int j = 0; j < list.length; j++) {
-                    if (list[j] == interceptor) {
-                        return;
-                    }
-                }
-                MethodInterceptor[] newList = new MethodInterceptor[list.length + 1];
-                System.arraycopy(list, 0, newList, 0, list.length);
-                newList[list.length] = interceptor;
-                m_methodRegistration.put(method.getMethodIdentifier(), newList);
-            }
+    public void register(int priority, MethodMetadata method, MethodInterceptor interceptor) {
+        if (interceptor == null) {
+            throw new NullPointerException("null interceptor");
         }
+        synchronized (m_methodRegistration) {
+            // TODO (?) check if the same interceptor is not already registered
+            SortedMap<Integer, List<MethodInterceptor>> mmap = m_methodRegistration.get(method.getMethodIdentifier());
+            if (mmap == null) {
+                mmap = new TreeMap<Integer, List<MethodInterceptor>>();
+                m_methodRegistration.put(method.getMethodIdentifier(), mmap);
+            }
+            List<MethodInterceptor> list = mmap.get(priority);
+            if (list == null) {
+                list = new ArrayList<MethodInterceptor>(1);
+                mmap.put(priority, list);
+            }
+            list.add(interceptor);
+        }
+    }
+
+    /**
+     * Registers a method interceptor with the lowest priority.
+     * Invoking this method is equivalent to invoking {@code register(Integer.MAX_VALUE, method, interceptor)}
+     *
+     * @param method the method to monitor
+     * @param interceptor the method interceptor object
+     * @see #register(int, MethodMetadata, MethodInterceptor)
+     */
+    public void register(MethodMetadata method, MethodInterceptor interceptor) {
+        register(Integer.MAX_VALUE, method, interceptor);
     }
 
     /**
@@ -906,18 +923,17 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * @param priority the priority of the interceptor.
      * @param interceptor the constructor interceptor object.
      * @throws NullPointerException if {@code interceptor} is null.
-     * */
+     */
     public void register(int priority, ConstructorInterceptor interceptor) {
         if (interceptor == null) {
             throw new NullPointerException("null interceptor");
         }
-        Integer key = new Integer(priority);
         synchronized (m_constructorRegistration) {
-            List<ConstructorInterceptor> list = m_constructorRegistration.get(key);
+            List<ConstructorInterceptor> list = m_constructorRegistration.get(priority);
             if (list == null) {
                 list = new ArrayList<ConstructorInterceptor>(1);
                 list.add(interceptor);
-                m_constructorRegistration.put(key, list);
+                m_constructorRegistration.put(priority, list);
             } else {
                 list.add(interceptor);
             }
@@ -929,8 +945,8 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * Invoking this method is equivalent to invoking {@code register(Integer.MAX_VALUE, interceptor)}
      *
      * @param interceptor the constructor interceptor object.
-     *                @see #register(int, ConstructorInterceptor)
-     * */
+     * @see #register(int, ConstructorInterceptor)
+     */
     public void register(ConstructorInterceptor interceptor) {
         register(Integer.MAX_VALUE, interceptor);
     }
@@ -938,24 +954,21 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
     /**
      * This method is called by the manipulated class each time that a GETFIELD instruction is executed.
      * The method asks to each attached handler monitoring this field which value need
-     * to be injected (i.e. returned) by invoking the {@link PrimitiveHandler#onGet(Object, String, Object)}
-     * method. If the field value changes, this method call the {@link PrimitiveHandler#onSet(Object, String, Object)}
+     * to be injected (i.e. returned) by invoking the {@link PrimitiveHandler#onFieldAccess(FieldInvocationContext, Object)}
+     * method. If the field value changes, this method call the {@link PrimitiveHandler#onFieldAccess(FieldInvocationContext, Object)}
      * method on each field interceptor monitoring the field in order to advertize the new value.
      * @param pojo the pojo object on which the field was get
      * @param fieldName the field name on which the GETFIELD instruction is called
-     * @return the value decided by the last asked handler (throws a warning if two fields decide two different values)
+     * @return the value decided by the field interception chain
      */
-    public Object  onGet(Object pojo, String fieldName) {
+    public Object onGet(Object pojo, String fieldName) {
         Object initialValue = null;
         synchronized (this) { // Stack confinement.
             initialValue = m_fields.get(fieldName);
         }
         Object result;
-        
-        // Construct the interception chain for the field access.
-        FieldInterceptor[] list = (FieldInterceptor[]) m_fieldRegistration.get(fieldName); // Immutable list.
-        List<FieldInterceptor> chain = new ArrayList<FieldInterceptor>(Arrays.asList(list));
-        Collections.reverse(chain);
+
+        List<FieldInterceptor> chain = getFieldInterceptorChain(fieldName);
         
         // Construct the interception context.
         Field field;
@@ -1025,9 +1038,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
 
     public Object onMethod(Object pojo, String methodId, Object[] args) throws Throwable {
         // Construct the interception chain for the method call.
-        MethodInterceptor[] list = (MethodInterceptor[]) m_methodRegistration.get(methodId); // Immutable list.
-        List<MethodInterceptor> chain = new ArrayList<MethodInterceptor>(Arrays.asList(list));
-        Collections.reverse(chain);
+        List<MethodInterceptor> chain = getMethodInterceptorChain(methodId);
 
         // Construct the interception context.
         Method method = (Method) getMethodById(methodId);
@@ -1081,7 +1092,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
 
     /**
      * This method is called by the manipulated class each time that a PUTFIELD instruction is executed.
-     * The method calls the {@link PrimitiveHandler#onSet(Object, String, Object)} method on each field
+     * The method calls the {@link PrimitiveHandler#onFieldAccess(FieldInvocationContext, Object)} method on each field
      * interceptors monitoring this field.
      * This method can be invoked with a <code>null</code> pojo argument when the changes comes from another
      * handler.
@@ -1090,11 +1101,8 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * @param objectValue the new value of the field
      */
     public void onSet(final Object pojo, final String fieldName, final Object objectValue) {
-        
-        // Construct the interception chain for the field access.
-        FieldInterceptor[] list = (FieldInterceptor[]) m_fieldRegistration.get(fieldName); // Immutable list.
-        List<FieldInterceptor> chain = new ArrayList<FieldInterceptor>(Arrays.asList(list));
-        Collections.reverse(chain);
+
+        List<FieldInterceptor> chain = getFieldInterceptorChain(fieldName);
         
         // Construct the interception context.
         Field field;
@@ -1249,11 +1257,10 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * its initialization.
      * @return the set of registered fields.
      */
-    public Set getRegistredFields() {
-        if (m_fieldRegistration == null) {
-            return null;
+    public Set<String> getRegistredFields() {
+        synchronized (m_fieldRegistration) {
+            return m_fieldRegistration.keySet();
         }
-        return m_fieldRegistration.keySet();
     }
 
     /**
@@ -1268,5 +1275,49 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         } else {
             return m_methodRegistration.keySet();
         }
+    }
+
+    /**
+     * Constructs the ordered chain of field interceptors for the given field.
+     * @param fieldName the name of the field
+     * @return the chain of interceptors for the given field.
+     */
+    private List<FieldInterceptor> getFieldInterceptorChain(String fieldName) {
+        List<FieldInterceptor> chain;
+        synchronized (m_fieldRegistration) {
+            SortedMap<Integer, List<FieldInterceptor>> fmap = m_fieldRegistration.get(fieldName);
+            if (fmap != null) {
+                chain = new ArrayList<FieldInterceptor>(fmap.size());
+                for (List<FieldInterceptor> o : fmap.values()) {
+                    chain.addAll(o);
+                }
+                Collections.reverse(chain);
+            } else {
+                chain = Collections.emptyList();
+            }
+        }
+        return chain;
+    }
+
+    /**
+     * Constructs the ordered chain of method interceptors for the given method.
+     * @param methodId the id of the method
+     * @return the chain of interceptors for the given method.
+     */
+    private List<MethodInterceptor> getMethodInterceptorChain(String methodId) {
+        List<MethodInterceptor> chain;
+        synchronized (m_methodRegistration) {
+            SortedMap<Integer, List<MethodInterceptor>> mmap = m_methodRegistration.get(methodId);
+            if (mmap != null) {
+                chain = new ArrayList<MethodInterceptor>(mmap.size());
+                for (List<MethodInterceptor> o : mmap.values()) {
+                    chain.addAll(o);
+                }
+                Collections.reverse(chain);
+            } else {
+                chain = Collections.emptyList();
+            }
+        }
+        return chain;
     }
 }
