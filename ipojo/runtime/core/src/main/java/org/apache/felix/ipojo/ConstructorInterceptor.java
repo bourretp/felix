@@ -19,14 +19,12 @@
 package org.apache.felix.ipojo;
 
 /**
+ * Constructor interceptor.
  * Interface implemented to support constructor parameter injection. When a new
  * POJO object has to be created, all constructor injectors are called to gets
  * the objects to injects as well as the type (to discover the constructor).
  * Handlers willing to inject constructor parameters must register themselves
- * using {@link InstanceManager#register(int, ConstructorInjector)} where the
- * integer is the parameter index. Only one injector can inject a value for a
- * specific index. If several injectors are registered for the same index, the
- * component type is declared as invalid.
+ * using {@link InstanceManager#register(ConstructorInterceptor)}.
  * 
  * @author <a href="mailto:dev@felix.apache.org">Felix Project Team</a>
  */

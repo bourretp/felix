@@ -150,7 +150,25 @@ public final class ConstructorInvocationContext {
   }
 
   /**
-   * Return the list of the constructor invocation parameters.
+    * Return the POJO that is being constructed.
+    *
+    * <p>
+    * If no custom POJO has been provided, this method returns
+    * {@code null} until the tip of the interception chain has been reached.
+    * </p>
+    * @return the POJO whose construction is intercepted.
+   */
+  public Object getPojo() {
+    return m_constructor;
+  }
+
+  /**
+   * Return the list of the constructor invocation parameters. Parameters can be added/changed/removed directly by
+   * manipulating the returned list.
+   *
+   * <p>
+   * Once the tip of the interception chain has been reached, the returned list is immutable.
+   * </p>
    * 
    * @return the parameters of the constructor invocation.
    */
@@ -163,11 +181,10 @@ public final class ConstructorInvocationContext {
   }
 
   /**
-   * Call the next interceptor int the chain, or find and call a suitable POJO
-   * constructor.
-   * 
-   * 
-   * Proceed to the constructor invocation.
+   * Proceed to the POJO construction.
+   *
+   * Call the next interceptor in the chain, or find and call a suitable POJO
+   * constructor/factory method, if no custom POJO is injected.
    * 
    * @return the created POJO object created by the constructor invocation.
    * @throws Throwable
@@ -324,7 +341,7 @@ public final class ConstructorInvocationContext {
     return ctor;
   }
 
-  //
+  // Same as doProceed, but use a factory method instead of a POJO constructor
   private Object doProceedWithFactoryMethod() throws Throwable {
       // Build the pojo object with the factory-method.
       Method factory = null;

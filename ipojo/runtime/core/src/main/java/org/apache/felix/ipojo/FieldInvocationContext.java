@@ -118,13 +118,15 @@ public final class FieldInvocationContext {
   }
 
   /**
-   * @return the constructor that has been called, or {@code null} if no
-   *         constructor has not been invoked yet.
+   * @return the intercepted field.
    */
   public Field getField() {
     return m_field;
   }
-  
+
+  /**
+   * @return the POJO whose intercepted field is accessed.
+   */
   public Object getPojo() {
     return m_pojo;
   }
