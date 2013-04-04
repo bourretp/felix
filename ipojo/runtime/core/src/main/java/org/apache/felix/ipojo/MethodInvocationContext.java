@@ -118,6 +118,18 @@ public final class MethodInvocationContext {
 
   /**
    * Return the list of the method invocation parameters.
+   *
+   * <p>
+   * <em>BEFORE</em> {@link #proceed()} is called:
+   * The returned list has a fixed size, but its elements can be changed by
+   * calling the {@link List#set(int, Object)} method, or
+   * {@link ListIterator#set(Object)}. All other list modifiers (add,
+   * remove, clear, retain, ...) throw an {code UnsupportedOperationException}.
+   *
+   * <p>
+   * <em>AFTER</em> {@link #proceed()} has been called:
+   * The returned list is immutable. All modifiers throw an
+   * {code UnsupportedOperationException}.
    * 
    * @return the parameters of the method invocation.
    */
@@ -130,7 +142,11 @@ public final class MethodInvocationContext {
   }
 
   /**
-   * Call the next interceptor in the chain, or call the actual POJO method.
+   * Proceed to the method call.
+   *
+   * <p>
+   * This method calls the next interceptor in the interception chain.
+   * If the caller is the last interceptor, the real POJO method is called.
    * 
    * @return the result of the method invocation.
    * @throws Throwable
@@ -172,7 +188,7 @@ public final class MethodInvocationContext {
   /**
    * The ultimate POJO method, executed at the end of the interception chain.
    * 
-   * @return the result of the POJO method.
+   * @return the result of the POJO method call.
    * @throws Throwable
    *           if the POJO method has thrown an exception.
    */
