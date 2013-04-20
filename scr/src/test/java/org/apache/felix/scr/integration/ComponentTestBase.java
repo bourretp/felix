@@ -114,7 +114,7 @@ public abstract class ComponentTestBase
 
     protected static boolean NONSTANDARD_COMPONENT_FACTORY_BEHAVIOR = false;
     protected volatile Log log;
-
+    
     //set to true to only get last 1000 lines of log.
     protected static boolean restrictedLogging;
     
@@ -369,6 +369,12 @@ public abstract class ComponentTestBase
             TestCase.fail( "Cannot get " + fieldName + " from " + object + ": " + t );
             return null; // keep the compiler happy
         }
+    }
+    
+    protected Object getComponentManagerFromComponentInstance( Object instance )
+    {
+        Object cc = getFieldValue( instance, "m_componentContext");
+        return getFieldValue( cc, "m_componentManager" );
     }
 
 
@@ -677,6 +683,8 @@ public abstract class ComponentTestBase
         private volatile PrintStream m_realOut;
         private volatile PrintStream m_realErr;
 
+        protected Throwable firstFrameworkThrowable;
+
         private final boolean restrictedLogging;
         private final String[] log = new String[1000];
         private int i = 0;
@@ -732,6 +740,12 @@ public abstract class ComponentTestBase
         {
             return m_warnings;
         }
+        
+        Throwable getFirstFrameworkThrowable()
+        {
+            return firstFrameworkThrowable;
+        }
+
 
 
         public void run()
@@ -767,6 +781,7 @@ public abstract class ComponentTestBase
                         sw.append( System.getProperty( "line.separator" ) );
                         PrintWriter pw = new PrintWriter( sw );
                         entry.getError().printStackTrace( pw );
+                        pw.flush();
                     }
                     if ( restrictedLogging )
                     {
@@ -795,6 +810,10 @@ public abstract class ComponentTestBase
             String msg = getFrameworkEventMessage( eventType );
             int level = ( eventType == FrameworkEvent.ERROR ) ? LogService.LOG_ERROR : LogService.LOG_WARNING;
             log( level, msg, event.getThrowable() );
+            if (event.getThrowable() != null && firstFrameworkThrowable == null)
+            {
+                firstFrameworkThrowable = event.getThrowable();
+            }
         }
 
 

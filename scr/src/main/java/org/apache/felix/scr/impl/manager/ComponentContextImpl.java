@@ -19,9 +19,13 @@
 package org.apache.felix.scr.impl.manager;
 
 
+import java.util.Arrays;
 import java.util.Dictionary;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.felix.scr.component.ExtComponentContext;
+import org.apache.felix.scr.impl.BundleComponentActivator;
 import org.apache.felix.scr.impl.helper.ReadOnlyDictionary;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
@@ -33,40 +37,77 @@ import org.osgi.service.component.ComponentInstance;
  * Implementation for the ComponentContext interface
  *
  */
-public class ComponentContextImpl implements ExtComponentContext, ComponentInstance {
+public class ComponentContextImpl<S> implements ExtComponentContext {
 
-    private AbstractComponentManager m_componentManager;
+    private final AbstractComponentManager<S> m_componentManager;
+    
+    private final EdgeInfo[] edgeInfos;
+    
+    private final ComponentInstance m_componentInstance = new ComponentInstanceImpl(this);
+    
+    private final Bundle m_usingBundle;
+    
+    private final S m_implementationObject;
+    
+    private volatile boolean m_implementationAccessible;
+    
+    private final CountDownLatch accessibleLatch = new CountDownLatch(1);
 
-
-    ComponentContextImpl( AbstractComponentManager componentManager )
+    ComponentContextImpl( AbstractComponentManager<S> componentManager, Bundle usingBundle, S implementationObject )
     {
         m_componentManager = componentManager;
+        m_usingBundle = usingBundle;
+        m_implementationObject = implementationObject;
+        edgeInfos = new EdgeInfo[componentManager.getComponentMetadata().getDependencies().size()];
+    }
+    
+    void setImplementationAccessible(boolean implementationAccessible)
+    {
+        this.m_implementationAccessible = implementationAccessible;
+        if (implementationAccessible)
+        {
+            accessibleLatch.countDown();
+        }
+    }
+    
+    EdgeInfo getEdgeInfo(DependencyManager<S, ?> dm)
+    {
+        int index = dm.getIndex();
+        if (edgeInfos[index] == null)
+        {
+            edgeInfos[index] = new EdgeInfo();
+        }
+        return edgeInfos[index];
     }
 
+    void clearEdgeInfos()
+    {
+        Arrays.fill( edgeInfos, null );
+    }
 
-    protected AbstractComponentManager getComponentManager()
+    protected AbstractComponentManager<S> getComponentManager()
     {
         return m_componentManager;
     }
 
-    public final Dictionary getProperties()
+    public final Dictionary<String, Object> getProperties()
     {
         // 112.12.3.5 The Dictionary is read-only and cannot be modified
-        Dictionary ctxProperties = m_componentManager.getProperties();
-        return new ReadOnlyDictionary( ctxProperties );
+        Dictionary<String, Object> ctxProperties = m_componentManager.getProperties();
+        return new ReadOnlyDictionary<String, Object>( ctxProperties );
     }
 
 
     public Object locateService( String name )
     {
-        DependencyManager dm = m_componentManager.getDependencyManager( name );
+        DependencyManager<S, ?> dm = m_componentManager.getDependencyManager( name );
         return ( dm != null ) ? dm.getService() : null;
     }
 
 
     public Object locateService( String name, ServiceReference ref )
     {
-        DependencyManager dm = m_componentManager.getDependencyManager( name );
+        DependencyManager<S, ?> dm = m_componentManager.getDependencyManager( name );
         return ( dm != null ) ? dm.getService( ref ) : null;
     }
 
@@ -80,52 +121,47 @@ public class ComponentContextImpl implements ExtComponentContext, ComponentInsta
 
     public BundleContext getBundleContext()
     {
-        return m_componentManager.getActivator().getBundleContext();
+        return m_componentManager.getBundleContext();
     }
 
 
     public Bundle getUsingBundle()
     {
-        return null;
+        return m_usingBundle;
     }
 
 
     public ComponentInstance getComponentInstance()
     {
-        return this;
+        return m_componentInstance;
     }
 
 
     public void enableComponent( String name )
     {
-        m_componentManager.getActivator().enableComponent( name );
+        BundleComponentActivator activator = m_componentManager.getActivator();
+        if ( activator != null )
+        {
+            activator.enableComponent( name );
+        }
     }
 
 
     public void disableComponent( String name )
     {
-        m_componentManager.getActivator().disableComponent( name );
+        BundleComponentActivator activator = m_componentManager.getActivator();
+        if ( activator != null )
+        {
+            activator.disableComponent( name );
+        }
     }
 
 
-    public ServiceReference getServiceReference()
+    public ServiceReference<S> getServiceReference()
     {
         return m_componentManager.getServiceReference();
     }
 
-
-    //---------- ComponentInstance interface ------------------------------
-
-    public Object getInstance()
-    {
-        return getComponentManager().getInstance();
-    }
-
-
-    public void dispose()
-    {
-        getComponentManager().dispose();
-    }
 
     //---------- Speculative MutableProperties interface ------------------------------
 
@@ -133,5 +169,49 @@ public class ComponentContextImpl implements ExtComponentContext, ComponentInsta
     {
         getComponentManager().setServiceProperties(properties );
     }
+    
+    //---------- ComponentInstance interface support ------------------------------
 
+    S getImplementationObject( boolean requireAccessible )
+    {
+        if ( !requireAccessible || m_implementationAccessible )
+        {
+            return m_implementationObject;
+        }
+        try
+        {
+            if (accessibleLatch.await( m_componentManager.getLockTimeout(), TimeUnit.MILLISECONDS ) && m_implementationAccessible)
+            {
+                return m_implementationObject;
+            }
+        }
+        catch ( InterruptedException e )
+        {
+            return null;
+        }
+        return null;
+    }
+    
+    private static class ComponentInstanceImpl implements ComponentInstance
+    {
+        private final ComponentContextImpl m_componentContext;
+
+        private ComponentInstanceImpl(ComponentContextImpl m_componentContext)
+        {
+            this.m_componentContext = m_componentContext;
+        }
+
+
+        public Object getInstance()
+        {
+            return m_componentContext.getImplementationObject(true);
+        }
+
+
+        public void dispose()
+        {
+            m_componentContext.getComponentManager().dispose();
+        }
+
+    }
 }

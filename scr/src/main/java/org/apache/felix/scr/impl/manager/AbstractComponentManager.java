@@ -41,6 +41,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import org.apache.felix.scr.Component;
 import org.apache.felix.scr.Reference;
 import org.apache.felix.scr.impl.BundleComponentActivator;
+import org.apache.felix.scr.impl.config.ScrConfiguration;
 import org.apache.felix.scr.impl.helper.ComponentMethods;
 import org.apache.felix.scr.impl.helper.MethodResult;
 import org.apache.felix.scr.impl.helper.SimpleLogger;
@@ -87,7 +88,7 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
     private final ComponentMethods m_componentMethods;
 
     // The dependency managers that manage every dependency
-    private final List<DependencyManager> m_dependencyManagers;
+    private final List<DependencyManager<S, ?>> m_dependencyManagers;
 
     private volatile boolean m_dependencyManagersInitialized;
 
@@ -190,9 +191,14 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         }
     }
 
-    private long getLockTimeout()
+    long getLockTimeout()
     {
-        return getActivator().getConfiguration().lockTimeout();
+        BundleComponentActivator activator = getActivator();
+        if ( activator != null )
+        {
+            return activator.getConfiguration().lockTimeout();
+        }
+        return ScrConfiguration.DEFAULT_LOCK_TIMEOUT_MILLISECONDS;
     }
 
     final void releaseWriteLock( String source )
@@ -490,6 +496,15 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         disposed = true;
         disposeInternal( reason );
     }
+    
+    <T> void registerMissingDependency( DependencyManager<S, T> dm, ServiceReference<T> ref, int trackingCount)
+    {
+        BundleComponentActivator activator = getActivator();
+        if ( activator != null )
+        {
+            activator.registerMissingDependency( dm, ref, trackingCount );
+        }
+    }
 
     //---------- Component interface ------------------------------------------
 
@@ -509,25 +524,30 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
      */
     public Bundle getBundle()
     {
+        final BundleContext context = getBundleContext();
+        if ( context != null )
+        {
+            try
+            {
+                return context.getBundle();
+            }
+            catch ( IllegalStateException ise )
+            {
+                // if the bundle context is not valid any more
+            }
+        }
+        // already disposed off component or bundle context is invalid
+        return null;
+    }
+    
+    BundleContext getBundleContext()
+    {
         final BundleComponentActivator activator = getActivator();
         if ( activator != null )
         {
-            final BundleContext context = activator.getBundleContext();
-            if ( context != null )
-            {
-                try
-                {
-                    return context.getBundle();
-                }
-                catch ( IllegalStateException ise )
-                {
-                    // if the bundle context is not valid any more
-                }
-            }
+            return activator.getBundleContext();
         }
-
-        // already disposed off component or bundle context is invalid
-        return null;
+        return null;        
     }
 
 
@@ -669,9 +689,9 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
     }
 
 
-    final ServiceReference getServiceReference()
+    final ServiceReference<S> getServiceReference()
     {
-        ServiceRegistration reg = getServiceRegistration();
+        ServiceRegistration<S> reg = getServiceRegistration();
         if (reg != null)
         {
             return reg.getReference();
@@ -728,8 +748,13 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         @Override
         ServiceRegistration<S> register(String[] services)
         {
+            BundleContext bundleContext = getBundleContext();
+            if (bundleContext == null) 
+            {
+                return null;
+            }
             final Dictionary<String, Object> serviceProperties = getServiceProperties();
-            ServiceRegistration<S> serviceRegistration = ( ServiceRegistration<S> ) getActivator().getBundleContext()
+            ServiceRegistration<S> serviceRegistration = ( ServiceRegistration<S> ) bundleContext
                     .registerService( services, getService(), serviceProperties );
             return serviceRegistration;
         }
@@ -792,10 +817,16 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         {
             return true;
         }
+        final Bundle bundle = getBundle();
+        if (bundle == null)
+        {
+            log( LogService.LOG_ERROR, "bundle shut down while trying to load implementation object class", null );
+            return false;
+        }
         Class<?> implementationObjectClass;
         try
         {
-            implementationObjectClass = getActivator().getBundleContext().getBundle().loadClass(
+            implementationObjectClass = bundle.loadClass(
                     getComponentMetadata().getImplementationClassName() );
         }
         catch ( ClassNotFoundException e )
@@ -851,7 +882,9 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
         m_dependenciesCollected = false;
     }
 
-    abstract <T> void update( DependencyManager<S, T> dependencyManager, RefPair<T> refPair, int trackingCount );
+    abstract EdgeInfo getEdgeInfo( S implObject, DependencyManager<S, ?> dependencyManager);
+    
+    abstract <T> void invokeUpdatedMethod( DependencyManager<S, T> dependencyManager, RefPair<T> refPair, int trackingCount );
 
     abstract <T> void invokeBindMethod( DependencyManager<S, T> dependencyManager, RefPair<T> refPair, int trackingCount );
 
@@ -959,16 +992,17 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
     }
 
 
-    private List<DependencyManager> loadDependencyManagers( ComponentMetadata metadata )
+    private List<DependencyManager<S, ?>> loadDependencyManagers( ComponentMetadata metadata )
     {
-        List<DependencyManager> depMgrList = new ArrayList<DependencyManager>(metadata.getDependencies().size());
+        List<DependencyManager<S, ?>> depMgrList = new ArrayList<DependencyManager<S, ?>>(metadata.getDependencies().size());
 
         // If this component has got dependencies, create dependency managers for each one of them.
         if ( metadata.getDependencies().size() != 0 )
         {
+            int index = 0;
             for ( ReferenceMetadata currentdependency: metadata.getDependencies() )
             {
-                DependencyManager depmanager = new DependencyManager( this, currentdependency );
+                DependencyManager<S, ?> depmanager = new DependencyManager( this, currentdependency, index++ );
 
                 depMgrList.add( depmanager );
             }
@@ -1037,7 +1071,7 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
      * Returns an iterator over the {@link DependencyManager} objects
      * representing the declared references in declaration order
      */
-    List<DependencyManager> getDependencyManagers()
+    List<DependencyManager<S, ?>> getDependencyManagers()
     {
         return m_dependencyManagers;
     }
@@ -1046,17 +1080,17 @@ public abstract class AbstractComponentManager<S> implements Component, SimpleLo
      * Returns an iterator over the {@link DependencyManager} objects
      * representing the declared references in reversed declaration order
      */
-    List<DependencyManager> getReversedDependencyManagers()
+    List<DependencyManager<S, ?>> getReversedDependencyManagers()
     {
-        List list = new ArrayList( m_dependencyManagers );
+        List<DependencyManager<S, ?>> list = new ArrayList<DependencyManager<S, ?>>( m_dependencyManagers );
         Collections.reverse( list );
         return list;
     }
 
 
-    DependencyManager getDependencyManager(String name)
+    DependencyManager<S, ?> getDependencyManager(String name)
     {
-        for ( DependencyManager dm: getDependencyManagers() )
+        for ( DependencyManager<S, ?> dm: getDependencyManagers() )
         {
             if ( name.equals(dm.getName()) )
             {

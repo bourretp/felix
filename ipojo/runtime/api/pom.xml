@@ -50,8 +50,8 @@
                             http://felix.apache.org/site/apache-felix-ipojo-api.html
                         </Bundle-DocURL>
                         <Import-Package>
-                            !org.objectweb.asm.tree,
                             org.apache.felix.ipojo.composite;resolution:=optional,
+                            org.osgi.framework;version=1.3,
                             *
                         </Import-Package>
                         <Export-Package>
@@ -61,6 +61,13 @@
                             org.objectweb.asm;version=3.3.1;-split-package:=merge-last,
                             org.objectweb.asm.signature;version=3.3.1;-split-package:=merge-last
                         </Export-Package>
+                        <Private-Package>
+                            org.objectweb.asm.commons,
+                            org.objectweb.asm.signature,
+                            org.objectweb.asm,
+                            org.objectweb.asm.tree,
+                            org.apache.felix.ipojo.manipulation*
+                        </Private-Package>
                     </instructions>
                 </configuration>
             </plugin>
@@ -114,12 +121,6 @@
             <groupId>asm</groupId>
             <artifactId>asm-all</artifactId>
             <version>3.3.1</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>asm</groupId>
-                    <artifactId>asm-tree</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
     </dependencies>
 </project>
