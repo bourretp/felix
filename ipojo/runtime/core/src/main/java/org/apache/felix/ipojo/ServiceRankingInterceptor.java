@@ -13,26 +13,6 @@ import java.util.List;
 public interface ServiceRankingInterceptor<S> {
 
     /**
-     * A sorted set service references.
-     *
-     * <p>
-     *     Does <em>not</em> allow {@code null} elements.
-     * </p>
-     *
-     * @param <S>
-     */
-    interface ServiceReferenceSet<S> extends List<ServiceReference<S>> {
-
-        /**
-         * Copies this service reference set.
-         *
-         * @return an independent copy of this service reference set.
-         */
-        ServiceReferenceSet<S> copy();
-
-    }
-
-    /**
      * Opens the service ranking interception for the given dependency.
      *
      * @param dep the dependency that starts to use this interceptor
