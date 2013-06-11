@@ -434,11 +434,6 @@ public class ProvidedService implements ServiceFactory {
             notifyListeners(-1);
         }
 
-        // Notify: ProvidedServiceListeners.serviceUnregistered()
-        if (ref != null) {
-            notifyListeners(-1);
-        }
-
     }
 
     /**
