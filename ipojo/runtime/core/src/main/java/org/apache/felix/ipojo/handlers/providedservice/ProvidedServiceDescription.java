@@ -154,6 +154,14 @@ public class ProvidedServiceDescription {
     public Object[] getServices() {
         return m_ps.getInstanceManager().getPojoObjects();
     }
+
+    public void addListener(ProvidedServiceListener listener) {
+        m_ps.addListener(listener);
+    }
+
+    public void removeListener(ProvidedServiceListener listener) {
+        m_ps.removeListener(listener);
+    }
     
 
 }
