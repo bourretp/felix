@@ -9,8 +9,7 @@ import org.apache.felix.ipojo.runtime.core.services.CheckService;
 import org.apache.felix.ipojo.runtime.core.services.FooService;
 import org.junit.Test;
 
-import java.util.Hashtable;
-import java.util.NoSuchElementException;
+import java.util.*;
 
 import static org.junit.Assert.*;
 
@@ -20,40 +19,53 @@ public class TestListeners extends Common {
     int unregistrations = 0;
     int updates = 0;
     int total = 0;
+    List<ComponentInstance> instances = new ArrayList<ComponentInstance>();
 
     private class CountingListener implements ProvidedServiceListener {
-        public void serviceRegistered(ProvidedService providedService) {
+        public void serviceRegistered(ComponentInstance instance, ProvidedService providedService) {
             registrations++;
         }
-        public void serviceModified(ProvidedService providedService) {
+        public void serviceModified(ComponentInstance instance, ProvidedService providedService) {
             updates++;
         }
-        public void serviceUnregistered(ProvidedService providedService) {
+        public void serviceUnregistered(ComponentInstance instance, ProvidedService providedService) {
             unregistrations++;
         }
     }
 
     private class TotalCountingListener implements ProvidedServiceListener {
-        public void serviceRegistered(ProvidedService providedService) {
+        public void serviceRegistered(ComponentInstance instance, ProvidedService providedService) {
             total++;
         }
-        public void serviceModified(ProvidedService providedService) {
+        public void serviceModified(ComponentInstance instance, ProvidedService providedService) {
             total++;
         }
-        public void serviceUnregistered(ProvidedService providedService) {
+        public void serviceUnregistered(ComponentInstance instance, ProvidedService providedService) {
             total++;
         }
     }
 
     private class ThrowingListener implements ProvidedServiceListener {
-        public void serviceRegistered(ProvidedService providedService) {
+        public void serviceRegistered(ComponentInstance instance, ProvidedService providedService) {
             throw new RuntimeException("I'm bad");
         }
-        public void serviceModified(ProvidedService providedService) {
+        public void serviceModified(ComponentInstance instance, ProvidedService providedService) {
             throw new RuntimeException("I'm bad");
         }
-        public void serviceUnregistered(ProvidedService providedService) {
+        public void serviceUnregistered(ComponentInstance instance, ProvidedService providedService) {
             throw new RuntimeException("I'm bad");
+        }
+    }
+
+    private class AppendingListener implements ProvidedServiceListener {
+        public void serviceRegistered(ComponentInstance instance, ProvidedService providedService) {
+            instances.add(instance);
+        }
+        public void serviceModified(ComponentInstance instance, ProvidedService providedService) {
+            instances.add(instance);
+        }
+        public void serviceUnregistered(ComponentInstance instance, ProvidedService providedService) {
+            instances.add(instance);
         }
     }
 
@@ -75,12 +87,15 @@ public class TestListeners extends Common {
         // 1- CountingListener l1
         // 2- ThrowingListener bad
         // 3- TotalCountingListener l2
+        // 4- AppendingListener l3
         ProvidedServiceListener l1 = new CountingListener();
         ps.addListener(l1);
         ProvidedServiceListener bad = new ThrowingListener();
         ps.addListener(bad);
         ProvidedServiceListener l2 = new TotalCountingListener();
         ps.addListener(l2);
+        ProvidedServiceListener l3 = new AppendingListener();
+        ps.addListener(l3);
 
         // Check initial valued are untouched
         assertEquals(0, registrations);
@@ -136,6 +151,7 @@ public class TestListeners extends Common {
         ps.removeListener(l1);
         ps.removeListener(bad);
         ps.removeListener(l2);
+        ps.removeListener(l3);
 
         // Play with the controller and check that nothing moves
         assertFalse(check.check()); // Unregister
@@ -153,6 +169,11 @@ public class TestListeners extends Common {
         assertEquals(2, unregistrations);
         assertEquals(1, updates);
         assertEquals(5, total);
+
+        // Check that instances contains $total times the ci component instance, and nothing else.
+        assertEquals(5, instances.size());
+        instances.removeAll(Collections.singleton(ci));
+        assertEquals(0, instances.size());
 
         ci.dispose();
     }

@@ -755,11 +755,11 @@ public class ProvidedService implements ServiceFactory {
         for (ProvidedServiceListener l : tmp) {
             try {
                 if (direction > 0) {
-                    l.serviceRegistered(this);
+                    l.serviceRegistered(m_handler.getInstanceManager(), this);
                 } else if (direction < 0) {
-                    l.serviceUnregistered(this);
+                    l.serviceUnregistered(m_handler.getInstanceManager(), this);
                 } else {
-                    l.serviceModified(this);
+                    l.serviceModified(m_handler.getInstanceManager(), this);
                 }
             } catch (Throwable e) {
                 // Put a warning on the logger, and continue
