@@ -74,6 +74,12 @@ public class ProvidedService implements ServiceFactory {
     public static final int INSTANCE_STRATEGY = 3;
 
     /**
+     * Factory policy : CUSTOMIZED.
+     * Custom creation strategy
+     */
+    public static final int CUSTOM_STRATEGY = -1;
+
+    /**
      * At this time, it is only the java interface full name.
      */
     private String[] m_serviceSpecifications = new String[0];
@@ -95,9 +101,14 @@ public class ProvidedService implements ServiceFactory {
     private Property[] m_properties;
 
     /**
+     * Service providing policy.
+     */
+    private final int m_policy;
+
+    /**
      * Service Object creation policy.
      */
-    private CreationStrategy m_strategy;
+    private final CreationStrategy m_strategy;
 
     /**
      * Were the properties updated during the processing.
@@ -139,9 +150,16 @@ public class ProvidedService implements ServiceFactory {
      * @param conf the instance configuration.
      */
     public ProvidedService(ProvidedServiceHandler handler, String[] specification, int factoryPolicy, Class creationStrategyClass, Dictionary conf) {
+        CreationStrategy strategy;
         m_handler = handler;
 
         m_serviceSpecifications = specification;
+
+        if (creationStrategyClass == null) {
+            m_policy = factoryPolicy;
+        } else {
+            m_policy = CUSTOM_STRATEGY;
+        }
 
         // Add instance name, factory name and factory version is set.
         try {
@@ -172,42 +190,43 @@ public class ProvidedService implements ServiceFactory {
 
         if (creationStrategyClass != null) {
             try {
-                m_strategy = (CreationStrategy) creationStrategyClass.newInstance();
+                strategy = (CreationStrategy) creationStrategyClass.newInstance();
             } catch (IllegalAccessException e) {
+                strategy = null;
                 m_handler.error("["
                         + m_handler.getInstanceManager().getInstanceName()
                         + "] The customized service object creation policy "
                         + "(" + creationStrategyClass.getName() + ") is not accessible: "
                         + e.getMessage(), e);
                 getInstanceManager().stop();
-                return;
             } catch (InstantiationException e) {
+                strategy = null;
                 m_handler.error("["
                         + m_handler.getInstanceManager().getInstanceName()
                         + "] The customized service object creation policy "
                         + "(" + creationStrategyClass.getName() + ") cannot be instantiated: "
                         + e.getMessage(), e);
                 getInstanceManager().stop();
-                return;
             }
         } else {
             switch (factoryPolicy) {
                 case SINGLETON_STRATEGY:
-                    m_strategy = new SingletonStrategy();
+                    strategy = new SingletonStrategy();
                     break;
                 case SERVICE_STRATEGY:
                 case STATIC_STRATEGY:
                     // In this case, we need to try to create a new pojo object,
                     // the factory method will handle the creation.
-                    m_strategy = new FactoryStrategy();
+                    strategy = new FactoryStrategy();
                     break;
                 case INSTANCE_STRATEGY:
-                    m_strategy = new PerInstanceStrategy();
+                    strategy = new PerInstanceStrategy();
                     break;
                 // Other policies:
                 // Thread : one service object per asking thread
                 // Consumer : one service object per consumer
                 default:
+                    strategy = null;
                     List specs = Arrays.asList(m_serviceSpecifications);
                     m_handler.error("["
                             + m_handler.getInstanceManager().getInstanceName()
@@ -217,6 +236,7 @@ public class ProvidedService implements ServiceFactory {
                     break;
             }
         }
+        m_strategy = strategy;
     }
 
     /**
@@ -224,8 +244,8 @@ public class ProvidedService implements ServiceFactory {
      * @param props : the properties to attached to the service registration
      */
     protected void setProperties(Property[] props) {
-        for (int i = 0; i < props.length; i++) {
-            addProperty(props[i]);
+        for (Property prop : props) {
+            addProperty(prop);
         }
     }
 
@@ -711,6 +731,14 @@ public class ProvidedService implements ServiceFactory {
 
     public void setPostUnregistrationCallback(Callback cb) {
         m_postUnregistration = cb;
+    }
+
+    public int getPolicy() {
+        return m_policy;
+    }
+
+    public Class<? extends CreationStrategy> getCreationStrategy() {
+        return m_strategy.getClass();
     }
 
     /**

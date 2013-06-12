@@ -155,6 +155,14 @@ public class ProvidedServiceDescription {
         return m_ps.getInstanceManager().getPojoObjects();
     }
 
+    public int getPolicy() {
+        return m_ps.getPolicy();
+    }
+
+    public Class<? extends CreationStrategy> getCreationStrategy() {
+        return m_ps.getCreationStrategy();
+    }
+
     /**
      * Add the given listener to the provided service handler's list of listeners.
      *
@@ -175,6 +183,5 @@ public class ProvidedServiceDescription {
     public void removeListener(ProvidedServiceListener listener) {
         m_ps.removeListener(listener);
     }
-    
 
 }
