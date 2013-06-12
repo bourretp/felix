@@ -31,14 +31,39 @@ import java.util.*;
 
 import static org.junit.Assert.*;
 
+/**
+ * Test that the ProvidedServiceHandler calls the ProvidedServiceHandlerListeners when watched provided service changes.
+ */
 public class TestListeners extends Common {
 
+    /**
+     * The number of provided service registrations, incremented by the {@code CountingListener}s.
+     */
     int registrations = 0;
+
+    /**
+     * The number of provided service unregistrations, incremented by the {@code CountingListener}s.
+     */
     int unregistrations = 0;
+
+    /**
+     * The number of provided service updates, incremented by the {@code CountingListener}s.
+     */
     int updates = 0;
+
+    /**
+     * The total number of provided service events, incremented by the {@code TotalCountingListener}s.
+     */
     int total = 0;
+
+    /**
+     * The {@code instance} arguments received by the {@code AppendingListener}s.
+     */
     List<ComponentInstance> instances = new ArrayList<ComponentInstance>();
 
+    /**
+     * A ProvidedServiceListener that just count service registrations, updates and unregistrations.
+     */
     private class CountingListener implements ProvidedServiceListener {
         public void serviceRegistered(ComponentInstance instance, ProvidedService providedService) {
             registrations++;
@@ -51,6 +76,9 @@ public class TestListeners extends Common {
         }
     }
 
+    /**
+     * A ProvidedServiceListener that just count events.
+     */
     private class TotalCountingListener implements ProvidedServiceListener {
         public void serviceRegistered(ComponentInstance instance, ProvidedService providedService) {
             total++;
@@ -63,6 +91,12 @@ public class TestListeners extends Common {
         }
     }
 
+    /**
+     * A ProvidedServiceListener that just fails.
+     * <p>
+     * Used to ensure that a failing listener does not prevent the following listeners to be called.
+     * </p>
+     */
     private class ThrowingListener implements ProvidedServiceListener {
         public void serviceRegistered(ComponentInstance instance, ProvidedService providedService) {
             throw new RuntimeException("I'm bad");
@@ -75,6 +109,9 @@ public class TestListeners extends Common {
         }
     }
 
+    /**
+     * A ProvidedServiceListener that just appends its arguments.
+     */
     private class AppendingListener implements ProvidedServiceListener {
         public void serviceRegistered(ComponentInstance instance, ProvidedService providedService) {
             instances.add(instance);
@@ -87,6 +124,10 @@ public class TestListeners extends Common {
         }
     }
 
+    /**
+     * Test that the listeners registered on the tested instance are called when the instance provided service is
+     * registered, updated or unregistered.
+     */
     @Test
     public void testProvidedServiceListener() {
         ComponentInstance ci = ipojoHelper.createComponentInstance("PS-Controller-1-default");

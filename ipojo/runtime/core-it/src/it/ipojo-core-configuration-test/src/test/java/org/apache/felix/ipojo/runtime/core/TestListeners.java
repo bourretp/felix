@@ -32,15 +32,39 @@ import java.util.*;
 
 import static org.junit.Assert.*;
 
-
+/**
+ * Test that the ConfigurationHandler calls the ConfigurationListeners when watched instance is reconfigured.
+ */
 public class TestListeners extends Common {
 
+    /**
+     * The number of reconfigurations, incremented by the {@code CountingListener}s.
+     */
     int updates = 0;
+
+    /**
+     * The {@code instance} arguments received by the {@code AppendingListener}s.
+     */
     List<ComponentInstance> instances = new ArrayList<ComponentInstance>();
+
+    /**
+     * The {@code configuration} arguments received by the {@code AppendingListener}s.
+     */
     List<Map<String, Object>> configs = new ArrayList<Map<String, Object>>();
 
+    /**
+     * The tested component instance.
+     */
     ComponentInstance fooProvider;
+
+    /**
+     * The configuration handler description of the tested component instance.
+     */
     ConfigurationHandlerDescription fooConfig;
+
+    /**
+     * The service provided by the tested component instance.
+     */
     FooService foo;
 
     @Before
@@ -68,18 +92,30 @@ public class TestListeners extends Common {
         fooProvider = null;
     }
 
+    /**
+     * A ConfigurationListener that just count its calls.
+     */
     private class CountingListener implements ConfigurationListener {
         public void configurationChanged(ComponentInstance instance, Map<String, Object> configuration) {
             updates++;
         }
     }
 
+    /**
+     * A ConfigurationListener that just fails.
+     * <p>
+     * Used to ensure that a failing listener does not prevent the following listeners to be called.
+     * </p>
+     */
     private class ThrowingListener implements ConfigurationListener {
         public void configurationChanged(ComponentInstance instance, Map<String, Object> configuration) {
             throw new RuntimeException("I'm bad");
         }
     }
 
+    /**
+     * A ConfigurationListener that just appends its arguments.
+     */
     private class AppendingListener implements ConfigurationListener {
         public void configurationChanged(ComponentInstance instance, Map<String, Object> configuration) {
             instances.add(instance);
@@ -87,6 +123,9 @@ public class TestListeners extends Common {
         }
     }
 
+    /**
+     * Test that the listeners registered on the tested instance are called when the instance is reconfigured.
+     */
     @Test
     public void testConfigurationListener() {
         // Register listeners
@@ -121,8 +160,8 @@ public class TestListeners extends Common {
         assertArrayEquals(new String[]{"bar", "bad"}, (String[]) configMap.get("strAProp"));
         assertArrayEquals(new int[]{21, 22, 23}, (int[]) configMap.get("intAProp"));
 
-        // Trigger a POJO internal reconfiguration.
-        // It should not trigger any reconfiguration event
+        // Trigger a POJO internal "reconfiguration".
+        // It should not trigger any reconfiguration event.
         foo.foo();
 
         // Check nothing has changed in the listeners
