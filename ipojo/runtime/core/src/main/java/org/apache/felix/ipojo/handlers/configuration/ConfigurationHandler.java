@@ -97,6 +97,11 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
     private Callback m_updated;
 
     /**
+     * The configuration listeners.
+     */
+    private List<ConfigurationListener> m_listeners = new ArrayList<ConfigurationListener>();
+
+    /**
      * Initialize the component type.
      *
      * @param desc     : component type description to populate.
@@ -386,19 +391,27 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
      * @param configuration : the new configuration
      * @see org.apache.felix.ipojo.Handler#reconfigure(java.util.Dictionary)
      */
-    public synchronized void reconfigure(Dictionary configuration) {
-        info(getInstanceManager().getInstanceName() + " is reconfiguring the properties : " + configuration);
-        Properties props = reconfigureProperties(configuration);
-        propagate(props, m_propagatedFromInstance);
-        m_propagatedFromInstance = props;
+    public void reconfigure(Dictionary configuration) {
+        Map<String, Object> map = new LinkedHashMap<String, Object>();
+        synchronized (this) {
+            info(getInstanceManager().getInstanceName() + " is reconfiguring the properties : " + configuration);
+            Properties props = reconfigureProperties(configuration);
+            propagate(props, m_propagatedFromInstance);
+            m_propagatedFromInstance = props;
 
-        if (getInstanceManager().getPojoObjects() != null) {
-            try {
-                notifyUpdated(null);
-            } catch (Throwable e) {
-                error("Cannot call the updated method : " + e.getMessage(), e);
+            if (getInstanceManager().getPojoObjects() != null) {
+                try {
+                    notifyUpdated(null);
+                } catch (Throwable e) {
+                    error("Cannot call the updated method : " + e.getMessage(), e);
+                }
+            }
+            // Make a snapshot of the current configuration
+            for (Property p : m_configurableProperties) {
+                map.put(p.getName(), p.getValue());
             }
         }
+        notifyListeners(map);
     }
 
     /**
@@ -508,10 +521,13 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
      * @see org.apache.felix.ipojo.PrimitiveHandler#onCreation(Object)
      */
     public void onCreation(Object instance) {
+        Map<String, Object> map = new LinkedHashMap<String, Object>();
         for (Property prop : m_configurableProperties) {
             if (prop.hasMethod()) {
                 prop.invoke(instance);
             }
+            // Fill the snapshot copy while calling callbacks
+            map.put(prop.getName(), prop.getValue());
         }
 
         try {
@@ -519,6 +535,7 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
         } catch (Throwable e) {
             error("Cannot call the updated method : " + e.getMessage(), e);
         }
+        notifyListeners(map);
     }
 
     /**
@@ -606,27 +623,35 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
      *          the reconfiguration failed.
      * @see org.osgi.service.cm.ManagedService#updated(java.util.Dictionary)
      */
-    public synchronized void updated(Dictionary conf) throws org.osgi.service.cm.ConfigurationException {
-        if (conf == null && !m_configurationAlreadyPushed) {
-            return; // First call
-        } else if (conf != null) { // Configuration push
-            Properties props = reconfigureProperties(conf);
-            propagate(props, m_propagatedFromCA);
-            m_propagatedFromCA = props;
-            m_configurationAlreadyPushed = true;
-        } else if (m_configurationAlreadyPushed) { // Configuration deletion
-            propagate(null, m_propagatedFromCA);
-            m_propagatedFromCA = null;
-            m_configurationAlreadyPushed = false;
-        }
+    public void updated(Dictionary conf) throws org.osgi.service.cm.ConfigurationException {
+        Map<String, Object> map = new LinkedHashMap<String, Object>();
+        synchronized (this) {
+            if (conf == null && !m_configurationAlreadyPushed) {
+                return; // First call
+            } else if (conf != null) { // Configuration push
+                Properties props = reconfigureProperties(conf);
+                propagate(props, m_propagatedFromCA);
+                m_propagatedFromCA = props;
+                m_configurationAlreadyPushed = true;
+            } else if (m_configurationAlreadyPushed) { // Configuration deletion
+                propagate(null, m_propagatedFromCA);
+                m_propagatedFromCA = null;
+                m_configurationAlreadyPushed = false;
+            }
 
-        if (getInstanceManager().getPojoObjects() != null) {
-            try {
-                notifyUpdated(null);
-            } catch (Throwable e) {
-                error("Cannot call the updated method : " + e.getMessage(), e);
+            if (getInstanceManager().getPojoObjects() != null) {
+                try {
+                    notifyUpdated(null);
+                } catch (Throwable e) {
+                    error("Cannot call the updated method : " + e.getMessage(), e);
+                }
+            }
+            // Make a snapshot of the current configuration
+            for (Property p : m_configurableProperties) {
+                map.put(p.getName(), p.getValue());
             }
         }
+        notifyListeners(map);
     }
 
     /**
@@ -637,6 +662,61 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
      */
     public HandlerDescription getDescription() {
         return m_description;
+    }
+
+    public void addListener(ConfigurationListener listener) {
+        if (listener == null) {
+            throw new NullPointerException("null listener");
+        }
+        synchronized (m_listeners) {
+            m_listeners.add(listener);
+        }
+    }
+
+    public void removeListener(ConfigurationListener listener) {
+        if (listener == null) {
+            throw new NullPointerException("null listener");
+        }
+        synchronized (m_listeners) {
+            // We definitely cannot rely on listener's equals method...
+            // ...so we need to manually search for the listener, using ==.
+            int i = -1;
+            for(int j = m_listeners.size() -1; j>=0 ; j--) {
+                if (m_listeners.get(j) == listener) {
+                    // Found!
+                    i = j;
+                    break;
+                }
+            }
+            if (i != -1) {
+                m_listeners.remove(i);
+            } else {
+                throw new NoSuchElementException("no such listener");
+            }
+        }
+    }
+
+    private void notifyListeners(Map<String, Object> map) {
+        // Get a snapshot of the listeners
+        List<ConfigurationListener> tmp;
+        synchronized (m_listeners) {
+            tmp = new ArrayList<ConfigurationListener>(m_listeners);
+        }
+        // Protect the map.
+        map = Collections.unmodifiableMap(map);
+        // Do notify, outside any lock
+        for (ConfigurationListener l : tmp) {
+            try {
+                l.configurationChanged(getInstanceManager(), map);
+            } catch (Throwable e) {
+                // Failure inside a listener: put a warning on the logger, and continue
+                warn(String.format(
+                            "[%s] A ConfigurationListener has failed: %s",
+                            getInstanceManager().getInstanceName(),
+                            e.getMessage())
+                        , e);
+            }
+        }
     }
 
 
