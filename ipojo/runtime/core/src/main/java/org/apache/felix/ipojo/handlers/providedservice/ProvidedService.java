@@ -713,6 +713,12 @@ public class ProvidedService implements ServiceFactory {
         m_postUnregistration = cb;
     }
 
+    /**
+     * Add the given listener to the provided service handler's list of listeners.
+     *
+     * @param listener the {@code ProvidedServiceListener} object to be added
+     * @throws NullPointerException if {@code listener} is {@code null}
+     */
     public void addListener(ProvidedServiceListener listener) {
         if (listener == null) {
             throw new NullPointerException("null listener");
@@ -722,6 +728,13 @@ public class ProvidedService implements ServiceFactory {
         }
     }
 
+    /**
+     * Remove the given listener from the provided service handler's list of listeners.
+     *
+     * @param listener the {@code ProvidedServiceListener} object to be removed
+     * @throws NullPointerException if {@code listener} is {@code null}
+     * @throws NoSuchElementException if {@code listener} wasn't present the in provided service handler's list of listeners
+     */
     public void removeListener(ProvidedServiceListener listener) {
         if (listener == null) {
             throw new NullPointerException("null listener");
@@ -745,6 +758,11 @@ public class ProvidedService implements ServiceFactory {
         }
     }
 
+    /**
+     * Notify all listeners that a change has occurred in this provided service.
+     *
+     * @param direction the "direction" of the change (+1:registration, 0:update, -1:unregistration)
+     */
     private void notifyListeners(int direction) {
         // Get a snapshot of the listeners
         List<ProvidedServiceListener> tmp;

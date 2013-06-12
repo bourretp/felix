@@ -113,10 +113,23 @@ public class ConfigurationHandlerDescription extends HandlerDescription {
         return m_pid;
     }
 
+    /**
+     * Add the given listener to the configuration handler's list of listeners.
+     *
+     * @param listener the {@code ConfigurationListener} object to be added
+     * @throws NullPointerException if {@code listener} is {@code null}
+     */
     public void addListener(ConfigurationListener listener) {
         m_conf.addListener(listener);
     }
 
+    /**
+     * Remove the given listener from the configuration handler's list of listeners.
+     *
+     * @param listener the {@code ConfigurationListener} object to be removed
+     * @throws NullPointerException if {@code listener} is {@code null}
+     * @throws java.util.NoSuchElementException if {@code listener} wasn't present the in configuration handler's list of listeners
+     */
     public void removeListener(ConfigurationListener listener) {
         m_conf.removeListener(listener);
     }

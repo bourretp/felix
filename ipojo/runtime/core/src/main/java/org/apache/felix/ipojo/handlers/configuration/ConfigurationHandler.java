@@ -664,6 +664,12 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
         return m_description;
     }
 
+    /**
+     * Add the given listener to the configuration handler's list of listeners.
+     *
+     * @param listener the {@code ConfigurationListener} object to be added
+     * @throws NullPointerException if {@code listener} is {@code null}
+     */
     public void addListener(ConfigurationListener listener) {
         if (listener == null) {
             throw new NullPointerException("null listener");
@@ -673,6 +679,13 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
         }
     }
 
+    /**
+     * Remove the given listener from the configuration handler's list of listeners.
+     *
+     * @param listener the {@code ConfigurationListener} object to be removed
+     * @throws NullPointerException if {@code listener} is {@code null}
+     * @throws NoSuchElementException if {@code listener} wasn't present the in configuration handler's list of listeners
+     */
     public void removeListener(ConfigurationListener listener) {
         if (listener == null) {
             throw new NullPointerException("null listener");
@@ -696,6 +709,11 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
         }
     }
 
+    /**
+     * Notify all listeners that a reconfiguration has occurred.
+     *
+     * @param map the new configuration of the component instance.
+     */
     private void notifyListeners(Map<String, Object> map) {
         // Get a snapshot of the listeners
         List<ConfigurationListener> tmp;
