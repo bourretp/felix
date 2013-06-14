@@ -1206,4 +1206,13 @@ public abstract class DependencyModel {
             }
         }
     }
+
+    /**
+     * Removes all the listeners from this dependency before it gets disposed.
+     */
+    public void cleanup() {
+        synchronized (m_listeners) {
+            m_listeners.clear();
+        }
+    }
 }

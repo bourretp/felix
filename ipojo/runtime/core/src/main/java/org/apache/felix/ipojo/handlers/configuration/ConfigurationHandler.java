@@ -18,10 +18,7 @@
  */
 package org.apache.felix.ipojo.handlers.configuration;
 
-import org.apache.felix.ipojo.ConfigurationException;
-import org.apache.felix.ipojo.Factory;
-import org.apache.felix.ipojo.HandlerFactory;
-import org.apache.felix.ipojo.PrimitiveHandler;
+import org.apache.felix.ipojo.*;
 import org.apache.felix.ipojo.architecture.ComponentTypeDescription;
 import org.apache.felix.ipojo.architecture.HandlerDescription;
 import org.apache.felix.ipojo.architecture.PropertyDescription;
@@ -737,5 +734,14 @@ public class ConfigurationHandler extends PrimitiveHandler implements ManagedSer
         }
     }
 
-
+    @Override
+    public void stateChanged(int state) {
+        if (state == ComponentInstance.DISPOSED) {
+            // Clean up the list of listeners
+            synchronized (m_listeners) {
+                m_listeners.clear();
+            }
+        }
+        super.stateChanged(state);
+    }
 }

@@ -820,6 +820,15 @@ public class ProvidedService implements ServiceFactory {
     }
 
     /**
+     * Removes all the listeners from this provided service before it gets disposed.
+     */
+    public void cleanup() {
+        synchronized (m_listeners) {
+            m_listeners.clear();
+        }
+    }
+
+    /**
      * Service Controller.
      */
     class ServiceController {
