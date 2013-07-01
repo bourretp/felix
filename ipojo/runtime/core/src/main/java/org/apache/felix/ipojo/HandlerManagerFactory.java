@@ -63,7 +63,7 @@ public class HandlerManagerFactory extends ComponentFactory implements HandlerFa
 
         // Get the name
         m_factoryName = metadata.getAttribute("name");
-        if (m_factoryName == null) { throw new ConfigurationException("An Handler needs a name"); }
+        if (m_factoryName == null) { throw new ConfigurationException("A Handler needs a name"); }
 
         // Get the type
         String type = metadata.getAttribute("type");
@@ -155,8 +155,8 @@ public class HandlerManagerFactory extends ComponentFactory implements HandlerFa
      * and a handler is never immediate.
      * @return the required handler list.
      */
-    public List getRequiredHandlerList() {
-        List list = new ArrayList();
+    public List<RequiredHandler> getRequiredHandlerList() {
+        List<RequiredHandler> list = new ArrayList<RequiredHandler>();
         Element[] elems = m_componentMetadata.getElements();
         for (int i = 0; i < elems.length; i++) {
             Element current = elems[i];

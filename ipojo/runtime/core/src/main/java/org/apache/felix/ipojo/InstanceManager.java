@@ -23,17 +23,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Member;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Dictionary;
-import java.util.HashMap;
-import java.util.Hashtable;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.*;
 
 import org.apache.felix.ipojo.FieldInvocationContext.Type;
 import org.apache.felix.ipojo.architecture.InstanceDescription;
@@ -41,6 +31,7 @@ import org.apache.felix.ipojo.metadata.Element;
 import org.apache.felix.ipojo.parser.FieldMetadata;
 import org.apache.felix.ipojo.parser.MethodMetadata;
 import org.apache.felix.ipojo.util.Logger;
+import org.apache.felix.ipojo.util.Property;
 import org.osgi.framework.BundleContext;
 
 /**
@@ -229,7 +220,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      * This method does not need a synchronized block as the handler set is constant.
      * @return the handler array of plugged handlers.
      */
-    public Handler[] getRegistredHandlers() {
+    public Handler[] getRegisteredHandlers() {
         Handler[] handler = new Handler[m_handlers.length];
         for (int i = 0; i < m_handlers.length; i++) {
             handler[i] = m_handlers[i].getHandler();
@@ -322,7 +313,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         }
 
         // Plug handler descriptions
-        Handler[] handlers = getRegistredHandlers();
+        Handler[] handlers = getRegisteredHandlers();
         for (int i = 0; i < handlers.length; i++) {
             m_description.addHandler(handlers[i].getDescription());
         }
@@ -416,7 +407,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
      */
     public void dispose() {
         List listeners = null;
-        int state = -2; // Temporary state
+        int state; // Will be confined in stack.
         synchronized (this) {
             state = m_state; // Stack confinement
             if (m_listeners != null) {
@@ -645,7 +636,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                 m_logger.log(Logger.ERROR,
                                           "[" + m_name + "] createInstance -> The POJO constructor is not accessible : " + e.getMessage(), e);
                 stop();
-                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor is not accessible : " + e.getMessage());
+                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor is not accessible", e);
             } catch (SecurityException e) {
                 m_logger.log(
                                           Logger.ERROR,
@@ -654,7 +645,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                                                   + "] createInstance -> The POJO constructor is not accessible (security reason) : "
                                                   + e.getMessage(), e);
                 stop();
-                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor is not accessible : " + e.getMessage());
+                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor is not accessible", e);
             } catch (InvocationTargetException e) {
                 m_logger.log(
                                           Logger.ERROR,
@@ -662,19 +653,20 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                                                   + m_name
                                                   + "] createInstance -> Cannot invoke the constructor method - the constructor throws an exception : "
                                                   + e.getTargetException().getMessage(), e.getTargetException());
+                // onError(null, m_className, e.getTargetException());
                 stop();
-                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor has thrown an exception: " + e.getTargetException().getMessage());
+                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor has thrown an exception", e.getTargetException());
             } catch (NoSuchMethodException e) {
                 m_logger.log(Logger.ERROR,
                                           "[" + m_name + "] createInstance -> Cannot invoke the constructor (method not found) : " + e.getMessage(), e);
                 stop();
-                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor cannot be found : " + e.getMessage());
+                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor cannot be found", e);
             } catch (Throwable e) {
                 // Catch every other possible error and runtime exception.
                 m_logger.log(Logger.ERROR,
                         "[" + m_name + "] createInstance -> The POJO constructor invocation failed : " + e.getMessage(), e);
                 stop();
-                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor invocation has thrown an exception : " + e.getMessage());
+                throw new RuntimeException("Cannot create a POJO instance, the POJO constructor invocation has thrown an exception", e);
             }
         } else {
             try {
@@ -689,14 +681,15 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                 // Error : invocation failed
                 m_logger.log(Logger.ERROR,
                                           "[" + m_name + "] createInstance -> The factory-method throws an exception : " + e.getTargetException(), e.getTargetException());
+                // onError(null, m_className, e.getTargetException());
                 stop();
-                throw new RuntimeException("Cannot create a POJO instance, the factory-method has thrown an exception: " + e.getTargetException().getMessage());
+                throw new RuntimeException("Cannot create a POJO instance, the factory-method has thrown an exception", e.getTargetException());
             } catch (Throwable e) {
                 // Catch every other possible error and runtime exception.
                 m_logger.log(Logger.ERROR,
                         "[" + m_name + "] createInstance -> The factory-method invocation failed : " + e.getMessage(), e);
                 stop();
-                throw new RuntimeException("Cannot create a POJO instance, the factory-method invocation has thrown an exception : " + e.getMessage());
+                throw new RuntimeException("Cannot create a POJO instance, the factory-method invocation has thrown an exception", e);
             }
         }
         return instance;
@@ -808,7 +801,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             setIM.invoke(obj, new Object[] {this});
         } catch (Exception e) {
             // If anything wrong happened...
-            throw new RuntimeException("Cannot attach the injected object with the container of " + m_name + " : " + e.getMessage());
+            throw new RuntimeException("Cannot attach the injected object with the container of " + m_name, e);
         }
         
         
@@ -969,17 +962,17 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         Object result;
 
         List<FieldInterceptor> chain = getFieldInterceptorChain(fieldName);
-        
+
         // Construct the interception context.
         Field field;
         try {
-          field = getClazz().getDeclaredField(fieldName);
+            field = getClazz().getDeclaredField(fieldName);
         } catch (Exception e) {
-          m_logger.log(Logger.ERROR, "Cannot find POJO field: " + fieldName, e);
-          throw new RuntimeException(e);
+            m_logger.log(Logger.ERROR, "Cannot find POJO field: " + fieldName, e);
+            throw new RuntimeException(e);
         }
         FieldInvocationContext ctx = new FieldInvocationContext(this, chain, pojo, Type.READ, field);
-        
+
         // Proceed to the field read access.
         try {
             result = ctx.proceed(initialValue);
@@ -990,17 +983,17 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
             stop();
             throw new RuntimeException("Cannot GET POJO field value, the FieldInterceptor chain has thrown an exception", e);
         }
-        
+
         // The actual field value has been changed by the interception chain.
         // Current handler design forces to call onSet so they are notified of the
         // new injected value. It may be a good idea to :
         // TODO change handler design for onSet of injected values.
         if (initialValue != result) {
-            
+
             // Construct the interception context.
             // The interception chain is _exactly_ the same.
             FieldInvocationContext ctx2 = new FieldInvocationContext(this, chain, pojo, Type.WRITE, field);
-            
+
             try {
                 ctx2.proceed(result);
             } catch (Throwable e) {
@@ -1010,7 +1003,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
                 stop();
                 throw new RuntimeException("Cannot get POJO field value, the FieldInterceptor chain has thrown an exception", e);
             }
-            
+
         }
         return result;
     }
@@ -1114,7 +1107,7 @@ public class InstanceManager implements ComponentInstance, InstanceStateListener
         }
         FieldInvocationContext ctx = new FieldInvocationContext(this, chain, pojo, Type.WRITE, field);
         
-        // Proceed to the field read access.
+        // Proceed to the field WRITE access.
         try {
             ctx.proceed(objectValue);
         } catch (Throwable e) {

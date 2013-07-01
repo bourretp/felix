@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -125,7 +126,12 @@ public class DependencyManager<S, T> implements Reference
 
     private interface Customizer<T> extends ServiceTrackerCustomizer<T, RefPair<T>>
     {
-        boolean open();
+        /**
+         * attempt to obtain the services from the tracked service references that will be used in inital bind calls
+         * before activation.
+         * @return true if there are enough services for activation.
+         */
+        boolean prebind();
 
         void close();
 
@@ -263,7 +269,7 @@ public class DependencyManager<S, T> implements Reference
             }
         }
 
-        public boolean open()
+        public boolean prebind()
         {
             boolean success = m_dependencyMetadata.isOptional() || !getTracker().isEmpty();
             AtomicInteger trackingCount = new AtomicInteger( );
@@ -294,10 +300,6 @@ public class DependencyManager<S, T> implements Reference
             {
                 refPair = new RefPair<T>( serviceReference  );
             }
-            if (isActive())
-            {
-                 getServiceObject( m_bindMethods.getBind(), refPair );
-            }
             return refPair;
         }
 
@@ -309,6 +311,7 @@ public class DependencyManager<S, T> implements Reference
             {
                 if (isActive())
                 {
+                    getServiceObject( m_bindMethods.getBind(), refPair );
                     if ( !refPair.isFailed() )
                     {
                         m_componentManager.invokeBindMethod( DependencyManager.this, refPair, trackingCount );
@@ -372,7 +375,7 @@ public class DependencyManager<S, T> implements Reference
             ungetService( refPair );
         }
 
-        public boolean open()
+        public boolean prebind()
         {
             boolean success = m_dependencyMetadata.isOptional();
             AtomicInteger trackingCount = new AtomicInteger( );
@@ -487,7 +490,7 @@ public class DependencyManager<S, T> implements Reference
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} MultipleStaticGreedy removed {2} (exit)", new Object[] {getName(), trackingCount, serviceReference}, null );
         }
 
-        public boolean open()
+        public boolean prebind()
         {
             boolean success = m_dependencyMetadata.isOptional();
             AtomicInteger trackingCount = new AtomicInteger( );
@@ -497,6 +500,11 @@ public class DependencyManager<S, T> implements Reference
                 synchronized (refPair)
                 {
                     success |= getServiceObject( m_bindMethods.getBind(), refPair );
+                    if ( refPair.isFailed() )
+                    {
+                        m_componentManager.registerMissingDependency( DependencyManager.this, refPair.getRef(),
+                                trackingCount.get() );
+                    }
                 }
             }
             return success;
@@ -547,8 +555,9 @@ public class DependencyManager<S, T> implements Reference
         public void modifiedService( ServiceReference<T> serviceReference, RefPair<T> refPair, int trackingCount )
         {
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} MultipleStaticReluctant modified {2} (enter)", new Object[] {getName(), trackingCount, serviceReference}, null );
-            if (isActive())
-            {
+            Collection<RefPair<T>> refs = this.refs.get();
+            if (isActive() && refs.contains( refPair ))
+            {                
                 m_componentManager.invokeUpdatedMethod( DependencyManager.this, refPair, trackingCount );
             }
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} MultipleStaticReluctant modified {2} (exit)", new Object[] {getName(), trackingCount, serviceReference}, null );
@@ -579,7 +588,7 @@ public class DependencyManager<S, T> implements Reference
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} MultipleStaticReluctant removed {2} (exit)", new Object[] {getName(), trackingCount, serviceReference}, null );
         }
 
-        public boolean open()
+        public boolean prebind()
         {
             boolean success = m_dependencyMetadata.isOptional();
             Collection<RefPair<T>> refs = this.refs.get();
@@ -661,29 +670,34 @@ public class DependencyManager<S, T> implements Reference
         public void addedService( ServiceReference<T> serviceReference, RefPair<T> refPair, int trackingCount )
         {
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} SingleDynamic added {2} (enter)", new Object[] {getName(), trackingCount, serviceReference}, null );
-        	boolean tracked = false;
+            boolean tracked = false;
             if ( getPreviousRefMap().remove( serviceReference ) == null )
             {
                 if (isActive() )
                 {
-                    if ( this.refPair == null || ( !isReluctant() && refPair.getRef().compareTo( this.refPair.getRef() ) > 0 ) )
+                    boolean invokeBind;
+                    synchronized ( getTracker().tracked() )
                     {
-                        synchronized ( refPair )
-                        {
-                            getServiceObject( m_bindMethods.getBind(), refPair );
-                        }
+                        invokeBind = this.refPair == null
+                                || ( !isReluctant() && refPair.getRef().compareTo( this.refPair.getRef() ) > 0 );
+                    }
+                    if ( invokeBind )
+                    {
+                        getServiceObject( m_bindMethods.getBind(), refPair );
                         if ( !refPair.isFailed() )
                         {
                             m_componentManager.invokeBindMethod( DependencyManager.this, refPair, trackingCount );
                             if ( this.refPair != null )
                             {
-                                m_componentManager.invokeUnbindMethod( DependencyManager.this, this.refPair, trackingCount );
+                                m_componentManager.invokeUnbindMethod( DependencyManager.this, this.refPair,
+                                        trackingCount );
                                 closeRefPair();
                             }
                         }
                         else
                         {
-                            m_componentManager.registerMissingDependency( DependencyManager.this, serviceReference, trackingCount );
+                            m_componentManager.registerMissingDependency( DependencyManager.this, serviceReference,
+                                    trackingCount );
                         }
                         this.refPair = refPair;
                     }
@@ -699,14 +713,19 @@ public class DependencyManager<S, T> implements Reference
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} SingleDynamic added {2} (exit)", new Object[] {getName(), trackingCount, serviceReference}, null );
             if ( !tracked )
             {
-				tracked(trackingCount);
-			}
+                tracked(trackingCount);
+            }
         }
 
         public void modifiedService( ServiceReference<T> serviceReference, RefPair<T> refPair, int trackingCount )
         {
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} SingleDynamic modified {2} (enter)", new Object[] {getName(), trackingCount, serviceReference}, null );
-            if (isActive())
+            boolean invokeUpdated;
+            synchronized (getTracker().tracked())
+            {
+                invokeUpdated = isActive() && refPair == this.refPair;
+            }
+            if ( invokeUpdated )
             {
                 m_componentManager.invokeUpdatedMethod( DependencyManager.this, refPair, trackingCount );
             }
@@ -718,54 +737,74 @@ public class DependencyManager<S, T> implements Reference
         public void removedService( ServiceReference<T> serviceReference, RefPair<T> refPair, int trackingCount )
         {
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} SingleDynamic removed {2} (enter)", new Object[] {getName(), trackingCount, serviceReference}, null );
-            if (refPair == this.refPair)
+            boolean deactivate = false;
+            boolean untracked = true;
+            RefPair<T> oldRefPair = null;
+            RefPair<T> nextRefPair = null;
+            synchronized ( getTracker().tracked() )
             {
-                if ( isActive() )
+                if ( refPair == this.refPair )
                 {
-                    RefPair<T> nextRefPair = null;
-                    if ( !getTracker().isEmpty() )
+                    if ( isActive() )
                     {
-                        AtomicInteger trackingCount2 = new AtomicInteger( );
-                        SortedMap<ServiceReference<T>, RefPair<T>> tracked = getTracker().getTracked( true, trackingCount2 );
-                        nextRefPair = tracked.values().iterator().next();
-                        synchronized ( nextRefPair )
+                        if ( !getTracker().isEmpty() )
                         {
-                            if (!getServiceObject( m_bindMethods.getBind(), nextRefPair ))
-                            {
-                                //TODO error???
-                            }
+                            AtomicInteger trackingCount2 = new AtomicInteger();
+                            SortedMap<ServiceReference<T>, RefPair<T>> tracked = getTracker().getTracked( true,
+                                    trackingCount2 );
+                            nextRefPair = tracked.values().iterator().next();
                         }
-                        if ( !nextRefPair.isFailed() )
+                        if ( isOptional() || nextRefPair != null )
                         {
-                            m_componentManager.invokeBindMethod( DependencyManager.this, nextRefPair, trackingCount );
+                            oldRefPair = this.refPair;
+                            this.refPair = null;
+                        }
+                        else 
+                        {
+                            deactivate = true;            //required and no replacement service, deactivate
                         }
                     }
-
-                    if ( isOptional() || nextRefPair != null)
-                    {
-                        RefPair<T> oldRefPair = this.refPair;
-                        this.refPair = null;
-                        this.trackingCount = trackingCount;
-                        m_componentManager.invokeUnbindMethod( DependencyManager.this, oldRefPair, trackingCount );
-                        this.refPair = nextRefPair;
-                        tracked( trackingCount );
-                        ungetService( oldRefPair );
-                    }
-                    else //required and no replacement service, deactivate
-                    {
-                        this.trackingCount = trackingCount;
-                        tracked( trackingCount );
-                        m_componentManager.deactivateInternal( ComponentConstants.DEACTIVATION_REASON_REFERENCE, false, trackingCount );
-                    }
-                }
-                else
-                {
-                    this.refPair = null;
-                    this.trackingCount = trackingCount;
-                    tracked( trackingCount );
                 }
             }
-            else
+            if ( nextRefPair != null )
+            {
+                synchronized ( nextRefPair )
+                {
+                    if ( !getServiceObject( m_bindMethods.getBind(), nextRefPair ) )
+                    {
+                        //TODO error???
+                    }
+                }
+                if ( !nextRefPair.isFailed() )
+                {
+                    m_componentManager.invokeBindMethod( DependencyManager.this, nextRefPair,
+                            trackingCount );
+                }
+            }
+
+            if ( oldRefPair != null )
+            {
+                this.trackingCount = trackingCount;
+                m_componentManager.invokeUnbindMethod( DependencyManager.this, oldRefPair, trackingCount );
+                synchronized ( getTracker().tracked() )
+                {
+                    this.refPair = nextRefPair;
+                }
+                tracked( trackingCount );
+                untracked = false;
+            }
+            else if ( deactivate )
+            {
+                this.trackingCount = trackingCount;
+                tracked( trackingCount );
+                untracked = false;
+                m_componentManager.deactivateInternal( ComponentConstants.DEACTIVATION_REASON_REFERENCE, false, trackingCount );
+            }
+            if ( oldRefPair != null )
+            {
+                ungetService( oldRefPair );
+            }
+            if (untracked) // not ours
             {
                 this.trackingCount = trackingCount;
                 tracked( trackingCount );
@@ -773,25 +812,33 @@ public class DependencyManager<S, T> implements Reference
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} SingleDynamic removed {2} (exit)", new Object[] {getName(), trackingCount, serviceReference}, null );
         }
 
-        public boolean open()
+        public boolean prebind()
         {
+            RefPair<T> refPair = null;
             boolean success = m_dependencyMetadata.isOptional();
-            if ( success || !getTracker().isEmpty() )
+            AtomicInteger trackingCount = new AtomicInteger();
+            synchronized ( getTracker().tracked() )
             {
-                AtomicInteger trackingCount = new AtomicInteger( );
-                SortedMap<ServiceReference<T>, RefPair<T>> tracked = getTracker().getTracked( true, trackingCount );
-                if ( !tracked.isEmpty() )
+                if ( success || !getTracker().isEmpty() )
                 {
-                    RefPair<T> refPair = tracked.values().iterator().next();
-                    synchronized ( refPair )
+                    SortedMap<ServiceReference<T>, RefPair<T>> tracked = getTracker().getTracked( true, trackingCount );
+                    if ( !tracked.isEmpty() )
                     {
-                        success |= getServiceObject( m_bindMethods.getBind(), refPair );
+                        refPair = tracked.values().iterator().next();
+                        this.refPair = refPair;
                     }
-                    if (refPair.isFailed())
+                }
+            }
+            if (refPair != null) 
+            {
+                synchronized( refPair )
+                {
+                    success |= getServiceObject( m_bindMethods.getBind(), refPair );
+                    if ( refPair.isFailed() )
                     {
-                        m_componentManager.registerMissingDependency( DependencyManager.this, refPair.getRef(), trackingCount.get() );
+                        m_componentManager.registerMissingDependency( DependencyManager.this, refPair.getRef(),
+                                trackingCount.get() );
                     }
-                    this.refPair = refPair;
                 }
             }
             return success;
@@ -814,8 +861,19 @@ public class DependencyManager<S, T> implements Reference
 
         public Collection<RefPair<T>> getRefs( AtomicInteger trackingCount )
         {
-            trackingCount.set( this.trackingCount );
-            return refPair == null? Collections.<RefPair<T>>emptyList(): Collections.singleton( refPair );
+            Object monitor = getTracker() == null? null: getTracker().tracked();
+            if ( monitor != null )
+            {
+                synchronized ( monitor )
+                {
+                    trackingCount.set( this.trackingCount );
+                    return refPair == null? Collections.<RefPair<T>> emptyList(): Collections.singleton( refPair );
+                }
+            }
+            else
+            {
+                return Collections.<RefPair<T>> emptyList();
+            }
         }
     }
 
@@ -838,7 +896,12 @@ public class DependencyManager<S, T> implements Reference
             tracked( trackingCount );
             if ( isActive() )
             {
-                if ( !isReluctant() && ( this.refPair == null || refPair.getRef().compareTo( this.refPair.getRef() ) > 0 ) )
+                boolean reactivate;
+                synchronized (getTracker().tracked())
+                {
+                    reactivate = !isReluctant() && ( this.refPair == null || refPair.getRef().compareTo( this.refPair.getRef() ) > 0 );
+                }
+                if ( reactivate )
                 {
                     m_componentManager.deactivateInternal( ComponentConstants.DEACTIVATION_REASON_REFERENCE, false, trackingCount );
                     m_componentManager.activateInternal( trackingCount );
@@ -862,7 +925,12 @@ public class DependencyManager<S, T> implements Reference
         public void modifiedService( ServiceReference<T> serviceReference, RefPair<T> refPair, int trackingCount )
         {
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} SingleStatic modified {2} (enter)", new Object[] {getName(), trackingCount, serviceReference}, null );
-            if ( isActive() )
+            boolean invokeUpdated;
+            synchronized (getTracker().tracked())
+            {
+                invokeUpdated = isActive() && refPair == this.refPair;
+            }
+            if ( invokeUpdated )
             {
                 m_componentManager.invokeUpdatedMethod( DependencyManager.this, refPair, trackingCount );
             }
@@ -876,7 +944,12 @@ public class DependencyManager<S, T> implements Reference
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} SingleStatic removed {2} (enter)", new Object[] {getName(), trackingCount, serviceReference}, null );
             this.trackingCount = trackingCount;
             tracked( trackingCount );
-            if ( isActive() && refPair == this.refPair )
+            boolean reactivate;
+            synchronized (getTracker().tracked())
+            {
+                reactivate = isActive() && refPair == this.refPair;
+            }
+            if ( reactivate )
             {
                 m_componentManager.deactivateInternal( ComponentConstants.DEACTIVATION_REASON_REFERENCE, false, trackingCount );
                 m_componentManager.activateInternal( trackingCount );
@@ -884,21 +957,33 @@ public class DependencyManager<S, T> implements Reference
             m_componentManager.log( LogService.LOG_DEBUG, "dm {0} tracking {1} SingleStatic removed {2} (exit)", new Object[] {getName(), trackingCount, serviceReference}, null );
         }
 
-        public boolean open()
+        public boolean prebind()
         {
             boolean success = m_dependencyMetadata.isOptional();
             if ( success || !getTracker().isEmpty() )
             {
-                AtomicInteger trackingCount = new AtomicInteger( );
-                SortedMap<ServiceReference<T>, RefPair<T>> tracked = getTracker().getTracked( true, trackingCount );
-                if ( !tracked.isEmpty() )
+                RefPair<T> refPair = null;
+                AtomicInteger trackingCount = new AtomicInteger();
+                synchronized ( getTracker().tracked() )
                 {
-                    RefPair<T> refPair = tracked.values().iterator().next();
+                    SortedMap<ServiceReference<T>, RefPair<T>> tracked = getTracker().getTracked( true, trackingCount );
+                    if ( !tracked.isEmpty() )
+                    {
+                        refPair = tracked.values().iterator().next();
+                        this.refPair = refPair;
+                    }
+                }
+                if ( refPair != null )
+                {
                     synchronized ( refPair )
                     {
                         success |= getServiceObject( m_bindMethods.getBind(), refPair );
+                        if ( refPair.isFailed() )
+                        {
+                            m_componentManager.registerMissingDependency( DependencyManager.this, refPair.getRef(),
+                                    trackingCount.get() );
+                        }
                     }
-                    this.refPair = refPair;
                 }
             }
             return success;
@@ -906,25 +991,39 @@ public class DependencyManager<S, T> implements Reference
 
         public void close()
         {
-            if ( refPair != null )
+            synchronized ( getTracker().tracked() )
             {
-                ungetService( refPair );
+                if ( refPair != null )
+                {
+                    ungetService( refPair );
+                }
+                refPair = null;
+                getTracker().deactivate();
             }
-            refPair = null;
-            getTracker().deactivate();
         }
 
         public Collection<RefPair<T>> getRefs( AtomicInteger trackingCount )
         {
-            trackingCount.set( this.trackingCount );
-            return refPair == null ? Collections.<RefPair<T>>emptyList() : Collections.singleton( refPair );
+            Object monitor = getTracker() == null? null: getTracker().tracked();
+            if ( monitor != null )
+            {
+                synchronized ( monitor )
+                {
+                    trackingCount.set( this.trackingCount );
+                    return refPair == null? Collections.<RefPair<T>> emptyList(): Collections.singleton( refPair );
+                }
+            }
+            else
+            {
+                return Collections.<RefPair<T>> emptyList();
+            }
         }
     }
 
     private class NoPermissionsCustomizer implements Customizer<T>
     {
 
-        public boolean open()
+        public boolean prebind()
         {
             return false;
         }
@@ -1304,17 +1403,18 @@ public class DependencyManager<S, T> implements Reference
 
     boolean prebind()
     {
-        return customizer.open();
+        return customizer.prebind();
     }
 
     /**
      * initializes a dependency. This method binds all of the service
      * occurrences to the instance object
+     * @param edgeInfo TODO
      *
      * @return true if the dependency is satisfied and at least the minimum
      *      number of services could be bound. Otherwise false is returned.
      */
-    boolean open( S componentInstance )
+    boolean open( S componentInstance, EdgeInfo edgeInfo )
     {
         // If no references were received, we have to check if the dependency
         // is optional, if it is not then the dependency is invalid
@@ -1340,11 +1440,12 @@ public class DependencyManager<S, T> implements Reference
         boolean success = m_dependencyMetadata.isOptional();
         AtomicInteger trackingCount =  new AtomicInteger( );
         Collection<RefPair<T>> refs;
+        CountDownLatch openLatch = new CountDownLatch(1);
         synchronized ( trackerRef.get().tracked() )
         {
             refs = customizer.getRefs( trackingCount );
-            EdgeInfo info = getEdgeInfo( componentInstance );
-            info.setOpen( trackingCount.get() );
+            edgeInfo.setOpen( trackingCount.get() );
+            edgeInfo.setOpenLatch( openLatch );
         }
         m_componentManager.log( LogService.LOG_DEBUG,
             "For dependency {0}, optional: {1}; to bind: {2}",
@@ -1353,7 +1454,7 @@ public class DependencyManager<S, T> implements Reference
         {
             if ( !refPair.isFailed() )
             {
-                if ( !invokeBindMethod( componentInstance, refPair, trackingCount.get() ) )
+                if ( !invokeBindMethod( componentInstance, refPair, trackingCount.get(), edgeInfo ) )
                 {
                     m_componentManager.log( LogService.LOG_DEBUG,
                             "For dependency {0}, failed to invoke bind method on object {1}",
@@ -1363,20 +1464,16 @@ public class DependencyManager<S, T> implements Reference
                 success = true;
             }
         }
+        openLatch.countDown();
         return success;
     }
 
-
-    private EdgeInfo getEdgeInfo( S componentInstance )
-    {
-        return m_componentManager.getEdgeInfo( componentInstance, this );
-    }
-    
     /**
      * Revoke the given bindings. This method cannot throw an exception since
      * it must try to complete all that it can
+     * @param edgeInfo TODO
      */
-    void close( S componentInstance )
+    void close( S componentInstance, EdgeInfo edgeInfo )
     {
         // only invoke the unbind method if there is an instance (might be null
         // in the delayed component situation) and the unbind method is declared.
@@ -1388,9 +1485,8 @@ public class DependencyManager<S, T> implements Reference
         synchronized ( trackerRef.get().tracked() )
         {
             refPairs = customizer.getRefs( trackingCount );
-            EdgeInfo info = getEdgeInfo( componentInstance );
-            info.setClose( trackingCount.get() );
-            info.setLatch( latch );
+            edgeInfo.setClose( trackingCount.get() );
+            edgeInfo.setCloseLatch( latch );
         }
 
         m_componentManager.log( LogService.LOG_DEBUG,
@@ -1401,7 +1497,7 @@ public class DependencyManager<S, T> implements Reference
         {
             if ( doUnbind && !boundRef.isFailed() )
             {
-                invokeUnbindMethod( componentInstance, boundRef, trackingCount.get() );
+                invokeUnbindMethod( componentInstance, boundRef, trackingCount.get(), edgeInfo );
             }
 
         }
@@ -1457,15 +1553,15 @@ public class DependencyManager<S, T> implements Reference
      *
      * @param componentInstance
      * @param refPair the service reference, service object tuple.
-     *
      * @param trackingCount
+     * @param edgeInfo TODO
      * @return true if the service should be considered bound. If no bind
      *      method is found or the method call fails, <code>true</code> is
      *      returned. <code>false</code> is only returned if the service must
      *      be handed over to the bind method but the service cannot be
      *      retrieved using the service reference.
      */
-    boolean invokeBindMethod( S componentInstance, RefPair refPair, int trackingCount )
+    boolean invokeBindMethod( S componentInstance, RefPair refPair, int trackingCount, EdgeInfo info )
     {
         // The bind method is only invoked if the implementation object is not
         // null. This is valid for both immediate and delayed components
@@ -1473,7 +1569,6 @@ public class DependencyManager<S, T> implements Reference
         {
             synchronized ( trackerRef.get().tracked() )
             {
-                EdgeInfo info = getEdgeInfo( componentInstance );
                 if (info.outOfRange( trackingCount ) )
                 {
                     //ignore events before open started or we will have duplicate binds.
@@ -1511,8 +1606,9 @@ public class DependencyManager<S, T> implements Reference
      *
      * @param componentInstance
      * @param refPair A service reference corresponding to the service whose service
+     * @param edgeInfo TODO
      */
-    void invokeUpdatedMethod( S componentInstance, final RefPair<T> refPair, int trackingCount )
+    void invokeUpdatedMethod( S componentInstance, final RefPair<T> refPair, int trackingCount, EdgeInfo info )
     {
         if ( m_dependencyMetadata.getUpdated() == null )
         {
@@ -1532,12 +1628,39 @@ public class DependencyManager<S, T> implements Reference
             }
             synchronized ( trackerRef.get().tracked() )
             {
-                EdgeInfo info = getEdgeInfo( componentInstance );
                 if (info.outOfRange( trackingCount ) )
                 {
                     //ignore events after close started or we will have duplicate unbinds.
                     return;
                 }
+            }
+            try
+            {
+                if (!info.getOpenLatch().await( getLockTimeout(), TimeUnit.MILLISECONDS ))
+                {
+                    m_componentManager.log( LogService.LOG_ERROR,
+                            "DependencyManager : invokeUpdatedMethod : timeout on open latch {0}",  new Object[] {getName()}, null );
+                    m_componentManager.dumpThreads();
+                }
+            }
+            catch ( InterruptedException e )
+            {
+                try
+                {
+                    if (!info.getOpenLatch().await( getLockTimeout(), TimeUnit.MILLISECONDS ))
+                    {
+                        m_componentManager.log( LogService.LOG_ERROR,
+                                "DependencyManager : invokeUpdatedMethod : timeout on open latch {0}",  new Object[] {getName()}, null );
+                        m_componentManager.dumpThreads();
+                    }
+                }
+                catch ( InterruptedException e1 )
+                {
+                    m_componentManager.log( LogService.LOG_ERROR,
+                            "DependencyManager : invokeUpdatedMethod : Interrupted twice on open latch {0}",  new Object[] {getName()}, null );
+                    Thread.currentThread().interrupt();
+                }
+                Thread.currentThread().interrupt();
             }
             if ( !getServiceObject( m_bindMethods.getUpdated(), refPair ))
             {
@@ -1574,41 +1697,71 @@ public class DependencyManager<S, T> implements Reference
      * @param componentInstance
      * @param refPair A service reference corresponding to the service that will be
      * @param trackingCount
+     * @param info TODO
      */
-    void invokeUnbindMethod( S componentInstance, final RefPair<T> refPair, int trackingCount )
+    void invokeUnbindMethod( S componentInstance, final RefPair<T> refPair, int trackingCount, EdgeInfo info )
     {
         // The unbind method is only invoked if the implementation object is not
         // null. This is valid for both immediate and delayed components
         if ( componentInstance != null )
         {
-            EdgeInfo info;
-            synchronized ( trackerRef.get().tracked() )
-            {
-                info = getEdgeInfo( componentInstance );
-            }
             if (info.outOfRange( trackingCount ) )
             {
                 //wait for unbinds to complete
-                if (info.getLatch() != null)
+                if (info.getCloseLatch() != null)
                 {
                     try
                     {
-                        info.getLatch().await(  );
+                        if (!info.getCloseLatch().await( getLockTimeout(), TimeUnit.MILLISECONDS ) )
+                        {
+                            m_componentManager.log( LogService.LOG_ERROR,
+                                    "DependencyManager : invokeUnbindMethod : timeout on close latch {0}",  new Object[] {getName()}, null );
+                            m_componentManager.dumpThreads();
+                        }
                     }
                     catch ( InterruptedException e )
                     {
-                        //ignore
+                        try
+                        {
+                            if (!info.getCloseLatch().await( getLockTimeout(), TimeUnit.MILLISECONDS ) )
+                            {
+                                m_componentManager.log( LogService.LOG_ERROR,
+                                        "DependencyManager : invokeUnbindMethod : timeout on close latch {0}",  new Object[] {getName()}, null );
+                                m_componentManager.dumpThreads();
+                            }
+                        }
+                        catch ( InterruptedException e1 )
+                        {
+                            m_componentManager.log( LogService.LOG_ERROR,
+                                    "DependencyManager : invokeUnbindMethod : Interrupted twice on close latch {0}",  new Object[] {getName()}, null );
+                        }
+                        Thread.currentThread().interrupt();
                     }
                 }
                 //ignore events after close started or we will have duplicate unbinds.
                 return;
+            }
+            try
+            {
+                if (!info.getOpenLatch().await( getLockTimeout(), TimeUnit.MILLISECONDS ))
+                {
+                    m_componentManager.log( LogService.LOG_WARNING,
+                            "DependencyManager : invokeUnbindMethod : timeout on open latch {0}",  new Object[] {getName()}, null );
+                    m_componentManager.dumpThreads();
+                }
+            }
+            catch ( InterruptedException e )
+            {
+                Thread.currentThread().interrupt();
+                m_componentManager.dumpThreads();
+                //ignore
             }
 
             if (refPair == null)
             {
                 //TODO should this be possible? If so, reduce or eliminate logging
                 m_componentManager.log( LogService.LOG_WARNING,
-                        "DependencyManager : invokeUnbindMethod : Component set, but reference not present", null );
+                        "DependencyManager : invokeUnbindMethod : Component set, but reference not present {0}",  new Object[] {getName()}, null );
                 return;
             }
             if ( !getServiceObject( m_bindMethods.getUnbind(), refPair ))
@@ -1633,6 +1786,11 @@ public class DependencyManager<S, T> implements Reference
             m_componentManager.log( LogService.LOG_DEBUG,
                 "DependencyManager : Component not set, no need to call unbind method", null );
         }
+    }
+    
+    private long getLockTimeout()
+    {
+        return m_componentManager.getLockTimeout();
     }
 
 

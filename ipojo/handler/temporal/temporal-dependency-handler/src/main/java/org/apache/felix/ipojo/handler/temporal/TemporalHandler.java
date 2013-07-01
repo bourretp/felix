@@ -32,6 +32,7 @@ import org.apache.felix.ipojo.parser.MethodMetadata;
 import org.apache.felix.ipojo.parser.PojoMetadata;
 import org.apache.felix.ipojo.util.DependencyModel;
 import org.apache.felix.ipojo.util.DependencyStateListener;
+import org.osgi.framework.BundleContext;
 import org.osgi.framework.Filter;
 import org.osgi.framework.InvalidSyntaxException;
 
@@ -195,7 +196,7 @@ public class TemporalHandler extends PrimitiveHandler implements DependencyState
                 try {
                     filter = getInstanceManager().getContext().createFilter(fil);
                 } catch (InvalidSyntaxException e) {
-                    throw new ConfigurationException("A requirement filter is invalid : " + filter + " - " + e.getMessage());
+                    throw new ConfigurationException("A requirement filter is invalid : " + filter, e);
                 }
             }
 
@@ -245,7 +246,7 @@ public class TemporalHandler extends PrimitiveHandler implements DependencyState
                 }
             }
 
-            Class specification = DependencyModel.loadSpecification(spec, getInstanceManager().getContext());
+            Class specification = loadSpecification(spec, getInstanceManager().getContext());
             TemporalDependency dep = new TemporalDependency(specification, agg, collection, proxy, filter, getInstanceManager().getContext(), timeout, policy, di, this);
             m_dependencies.add(dep);
 
@@ -310,6 +311,23 @@ public class TemporalHandler extends PrimitiveHandler implements DependencyState
      * @see org.apache.felix.ipojo.util.DependencyStateListener#validate(org.apache.felix.ipojo.util.DependencyModel)
      */
     public void validate(DependencyModel dependencymodel) {    }
+
+    /**
+     * Loads the given specification class.
+     * @param specification the specification class name to load
+     * @param context the bundle context
+     * @return the class object for the given specification
+     * @throws ConfigurationException if the class cannot be loaded correctly.
+     */
+    public static Class loadSpecification(String specification, BundleContext context) throws ConfigurationException {
+        Class spec = null;
+        try {
+            spec = context.getBundle().loadClass(specification);
+        } catch (ClassNotFoundException e) {
+            throw new ConfigurationException("A required specification cannot be loaded : " + specification);
+        }
+        return spec;
+    }
 
 
 }

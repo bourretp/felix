@@ -77,6 +77,7 @@ class ComponentActorThread implements Runnable
                     }
                     catch ( InterruptedException ie )
                     {
+                        Thread.currentThread().interrupt();
                         // don't care
                     }
                 }
@@ -127,6 +128,7 @@ class ComponentActorThread implements Runnable
                 }
                 catch ( InterruptedException e )
                 {
+                    Thread.currentThread().interrupt();
                     Activator.log( LogService.LOG_ERROR, null, "Interrupted exception waiting for queue to empty", e );
                 }
             }

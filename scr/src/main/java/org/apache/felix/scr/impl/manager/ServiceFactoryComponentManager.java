@@ -19,6 +19,8 @@
 package org.apache.felix.scr.impl.manager;
 
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 
@@ -80,20 +82,19 @@ public class ServiceFactoryComponentManager<S> extends ImmediateComponentManager
         {
             throw new IllegalStateException( "need write lock (deleteComponent)" );
         }
-        for (Iterator<ComponentContextImpl> i = serviceContexts.values().iterator(); i.hasNext(); )
+        for (ComponentContextImpl componentContext: getComponentContexts() )
         {
-            ComponentContextImpl componentContext = i.next();
             disposeImplementationObject( componentContext, reason );
-            i.remove();
             log( LogService.LOG_DEBUG, "Unset implementation object for component {0} in deleteComponent for reason {1}", new Object[] { getName(), REASONS[ reason ] },  null );
         }
+        serviceContexts.clear();
     }
 
 
     /* (non-Javadoc)
      * @see org.apache.felix.scr.AbstractComponentManager#getInstance()
      */
-    Object getInstance()
+    S getInstance()
     {
         // this method is not expected to be called as the base call is
         // overwritten in the ComponentContextImpl class
@@ -139,12 +140,18 @@ public class ServiceFactoryComponentManager<S> extends ImmediateComponentManager
         {
             public void presetComponentContext( ComponentContextImpl<S> componentContext )
             {
-                serviceContexts.put( componentContext.getImplementationObject( false ), componentContext );
+                synchronized ( serviceContexts )
+                {
+                    serviceContexts.put( componentContext.getImplementationObject( false ), componentContext );
+                }
             }
 
             public void resetImplementationObject( S implementationObject )
             {
-                serviceContexts.remove( implementationObject );
+                synchronized ( serviceContexts )
+                {
+                    serviceContexts.remove( implementationObject );
+                }
             }
 
         } );
@@ -155,15 +162,6 @@ public class ServiceFactoryComponentManager<S> extends ImmediateComponentManager
             // log that the service factory component cannot be created (we don't
             // know why at this moment; this should already have been logged)
             log( LogService.LOG_ERROR, "Failed creating the component instance; see log for reason", null );
-        }
-        else
-        {
-            // if this is the first use of this component, switch to ACTIVE state
-            if ( getState() == STATE_REGISTERED )
-            {
-                changeState( Active.getInstance() );
-            }
-
         }
 
         return service;
@@ -180,44 +178,51 @@ public class ServiceFactoryComponentManager<S> extends ImmediateComponentManager
         // When the ungetServiceMethod is called, the implementation object must be deactivated
         // private ComponentContext and implementation instances
         final ComponentContextImpl<S> serviceContext;
-        serviceContext = serviceContexts.get( service );
-
-        disposeImplementationObject( serviceContext, ComponentConstants.DEACTIVATION_REASON_DISPOSED );
-        serviceContexts.remove( service );
-        // if this was the last use of the component, go back to REGISTERED state
-        if ( serviceContexts.isEmpty() && getState() == STATE_ACTIVE )
+        synchronized ( serviceContexts )
         {
-            changeState( Registered.getInstance() );
-            unsetDependenciesCollected();
+            serviceContext = serviceContexts.get( service );
+        }
+        disposeImplementationObject( serviceContext, ComponentConstants.DEACTIVATION_REASON_DISPOSED );
+        synchronized ( serviceContexts )
+        {
+            serviceContexts.remove( service );
+            // if this was the last use of the component, go back to REGISTERED state
+            if ( serviceContexts.isEmpty() && getState() == STATE_ACTIVE )
+            {
+                unsetDependenciesCollected();
+            }
         }
     }
 
-    EdgeInfo getEdgeInfo( S implObject, DependencyManager<S, ?> dependencyManager) 
+    private Collection<ComponentContextImpl> getComponentContexts()
     {
-        return serviceContexts.get( implObject ).getEdgeInfo( dependencyManager );
+        synchronized ( serviceContexts )
+        {
+            return new ArrayList<ComponentContextImpl>( serviceContexts.values() );
+        }
     }
 
     <T> void invokeBindMethod( DependencyManager<S, T> dependencyManager, RefPair<T> refPair, int trackingCount )
     {
-        for ( S implementationObject : serviceContexts.keySet() )
+        for ( ComponentContextImpl<S> cc : getComponentContexts() )
         {
-            dependencyManager.invokeBindMethod( implementationObject, refPair, trackingCount );
+            dependencyManager.invokeBindMethod( cc.getImplementationObject( false ), refPair, trackingCount, cc.getEdgeInfo( dependencyManager ) );
         }
     }
 
     <T> void invokeUpdatedMethod( DependencyManager<S, T> dependencyManager, RefPair<T> refPair, int trackingCount )
     {
-        for ( S implementationObject : serviceContexts.keySet() )
+        for ( ComponentContextImpl<S> cc : getComponentContexts() )
         {
-            dependencyManager.invokeUpdatedMethod( implementationObject, refPair, trackingCount );
+            dependencyManager.invokeUpdatedMethod( cc.getImplementationObject( false ), refPair, trackingCount, cc.getEdgeInfo( dependencyManager ) );
         }
     }
 
     <T> void invokeUnbindMethod( DependencyManager<S, T> dependencyManager, RefPair<T> oldRefPair, int trackingCount )
     {
-        for ( S implementationObject : serviceContexts.keySet() )
+        for ( ComponentContextImpl<S> cc : getComponentContexts() )
         {
-            dependencyManager.invokeUnbindMethod( implementationObject, oldRefPair, trackingCount );
+            dependencyManager.invokeUnbindMethod( cc.getImplementationObject( false ), oldRefPair, trackingCount, cc.getEdgeInfo( dependencyManager ) );
         }
     }
 
@@ -225,7 +230,7 @@ public class ServiceFactoryComponentManager<S> extends ImmediateComponentManager
     {
         ModifiedMethod modifiedMethod = getComponentMethods().getModifiedMethod();
         MethodResult result = MethodResult.VOID;
-        for ( ComponentContextImpl componentContext : serviceContexts.values() )
+        for ( ComponentContextImpl componentContext : getComponentContexts() )
         {
             Object instance = componentContext.getImplementationObject(true);
             result = modifiedMethod.invoke( instance,
@@ -233,6 +238,12 @@ public class ServiceFactoryComponentManager<S> extends ImmediateComponentManager
 
         }
         return result;
+    }
+    
+    @Override
+    boolean hasInstance()
+    {
+        return !serviceContexts.isEmpty();
     }
 
     //---------- Component interface

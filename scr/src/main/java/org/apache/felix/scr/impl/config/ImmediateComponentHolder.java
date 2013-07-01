@@ -26,6 +26,7 @@ import java.util.Map;
 
 import org.apache.felix.scr.Component;
 import org.apache.felix.scr.impl.BundleComponentActivator;
+import org.apache.felix.scr.impl.TargetedPID;
 import org.apache.felix.scr.impl.helper.ComponentMethods;
 import org.apache.felix.scr.impl.helper.SimpleLogger;
 import org.apache.felix.scr.impl.manager.DelayedComponentManager;
@@ -57,7 +58,7 @@ import org.osgi.service.log.LogService;
  * <code>service.factoryPid</code> equals the component name.</li>
  * </ul>
  */
-public class ImmediateComponentHolder implements ComponentHolder, SimpleLogger
+public class ImmediateComponentHolder<S> implements ComponentHolder, SimpleLogger
 {
 
     /**
@@ -73,10 +74,10 @@ public class ImmediateComponentHolder implements ComponentHolder, SimpleLogger
     /**
      * A map of components configured with factory configuration. The indices
      * are the PIDs (<code>service.pid</code>) of the configuration objects.
-     * The values are the {@link ImmediateComponentManager component instances}
+     * The values are the {@link ImmediateComponentManager<S> component instances}
      * created on behalf of the configurations.
      */
-    private final Map<String, ImmediateComponentManager> m_components;
+    private final Map<String, ImmediateComponentManager<S>> m_components;
 
     /**
      * The special component used if there is no configuration or a singleton
@@ -94,50 +95,52 @@ public class ImmediateComponentHolder implements ComponentHolder, SimpleLogger
      * by this field is also contained in the map</li>
      * <ul>
      */
-    private ImmediateComponentManager m_singleComponent;
+    private ImmediateComponentManager<S> m_singleComponent;
 
     /**
      * Whether components have already been enabled by calling the
      * {@link #enableComponents(boolean)} method. If this field is <code>true</code>
      * component instances created per configuration by the
-     * {@link #configurationUpdated(String, Dictionary, long)} method are also
+     * {@link #configurationUpdated(String, Dictionary, long, TargetedPID)} method are also
      * enabled. Otherwise they are not enabled immediately.
      */
     private volatile boolean m_enabled;
     private final ComponentMethods m_componentMethods;
+    
+    private TargetedPID m_targetedPID;
     
 
     public ImmediateComponentHolder( final BundleComponentActivator activator, final ComponentMetadata metadata )
     {
         this.m_activator = activator;
         this.m_componentMetadata = metadata;
-        this.m_components = new HashMap<String, ImmediateComponentManager>();
+        this.m_components = new HashMap<String, ImmediateComponentManager<S>>();
         this.m_componentMethods = new ComponentMethods();
         this.m_singleComponent = createComponentManager();
         this.m_enabled = false;
     }
 
-    protected ImmediateComponentManager createComponentManager()
+    protected ImmediateComponentManager<S> createComponentManager()
     {
 
-        ImmediateComponentManager manager;
+        ImmediateComponentManager<S> manager;
         if ( m_componentMetadata.isFactory() )
         {
             throw new IllegalArgumentException( "Cannot create component factory for " + m_componentMetadata.getName() );
         }
         else if ( m_componentMetadata.isImmediate() )
         {
-            manager = new ImmediateComponentManager( m_activator, this, m_componentMetadata, m_componentMethods );
+            manager = new ImmediateComponentManager<S>( m_activator, this, m_componentMetadata, m_componentMethods );
         }
         else if ( m_componentMetadata.getServiceMetadata() != null )
         {
             if ( m_componentMetadata.getServiceMetadata().isServiceFactory() )
             {
-                manager = new ServiceFactoryComponentManager( m_activator, this, m_componentMetadata, m_componentMethods );
+                manager = new ServiceFactoryComponentManager<S>( m_activator, this, m_componentMetadata, m_componentMethods );
             }
             else
             {
-                manager = new DelayedComponentManager( m_activator, this, m_componentMetadata, m_componentMethods );
+                manager = new DelayedComponentManager<S>( m_activator, this, m_componentMetadata, m_componentMethods );
             }
         }
         else
@@ -188,6 +191,7 @@ public class ImmediateComponentHolder implements ComponentHolder, SimpleLogger
         log( LogService.LOG_DEBUG, "ImmediateComponentHolder configuration deleted for pid {0}",
                 new Object[] {pid}, null);
 
+        m_targetedPID = null;
         // component to deconfigure or dispose of
         final ImmediateComponentManager icm;
         boolean deconfigure = false;
@@ -268,11 +272,18 @@ public class ImmediateComponentHolder implements ComponentHolder, SimpleLogger
      * this case a new component is created, configured and stored in the map</li>
      * </ul>
      */
-    public void configurationUpdated( final String pid, final Dictionary<String, Object> props, long changeCount )
+    public void configurationUpdated( final String pid, final Dictionary<String, Object> props, long changeCount, TargetedPID targetedPid )
     {
         log( LogService.LOG_DEBUG, "ImmediateComponentHolder configuration updated for pid {0} with properties {1}",
                 new Object[] {pid, props}, null);
 
+        if ( m_targetedPID != null && !m_targetedPID.equals( targetedPid ))
+        {
+            log( LogService.LOG_ERROR, "ImmediateComponentHolder unexpected change in targetedPID from {0} to {1}",
+                    new Object[] {m_targetedPID, targetedPid}, null);
+            throw new IllegalStateException("Unexpected targetedPID change");
+        }
+        m_targetedPID = targetedPid;
         // component to update or create
         final ImmediateComponentManager icm;
         final String message;
@@ -558,6 +569,11 @@ public class ImmediateComponentHolder implements ComponentHolder, SimpleLogger
         {
             activator.log( level, message, arguments, getComponentMetadata(), null, ex );
         }
+    }
+
+    public TargetedPID getConfigurationTargetedPID()
+    {
+        return m_targetedPID;
     }
 
 }

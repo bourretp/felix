@@ -29,6 +29,7 @@ import java.util.Map;
 
 import org.apache.felix.scr.Component;
 import org.apache.felix.scr.impl.BundleComponentActivator;
+import org.apache.felix.scr.impl.TargetedPID;
 import org.apache.felix.scr.impl.config.ComponentHolder;
 import org.apache.felix.scr.impl.helper.ComponentMethods;
 import org.apache.felix.scr.impl.metadata.ComponentMetadata;
@@ -69,7 +70,7 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
      * entry is the same as the entry's key.
      * This is an IdentityHashMap for speed, thus not a Set.
      */
-    private final Map<ImmediateComponentManager, ImmediateComponentManager> m_componentInstances;
+    private final Map<ImmediateComponentManager<S>, ImmediateComponentManager<S>> m_componentInstances;
 
     /**
      * The configuration for the component factory. This configuration is
@@ -89,11 +90,13 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
      * Configuration change count (R5) or imitation (R4)
      */
     protected volatile long m_changeCount = -1;
+    
+    private TargetedPID m_targetedPID;
 
     public ComponentFactoryImpl( BundleComponentActivator activator, ComponentMetadata metadata )
     {
         super( activator, metadata, new ComponentMethods() );
-        m_componentInstances = new IdentityHashMap<ImmediateComponentManager, ImmediateComponentManager>();
+        m_componentInstances = new IdentityHashMap<ImmediateComponentManager<S>, ImmediateComponentManager<S>>();
         m_configuration = new Hashtable<String, Object>();
     }
 
@@ -107,14 +110,14 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
     /* (non-Javadoc)
     * @see org.osgi.service.component.ComponentFactory#newInstance(java.util.Dictionary)
     */
-    public ComponentInstance newInstance( Dictionary dictionary )
+    public ComponentInstance newInstance( Dictionary<String, ?> dictionary )
     {
-        final ImmediateComponentManager cm = createComponentManager();
+        final ImmediateComponentManager<S> cm = createComponentManager();
         log( LogService.LOG_DEBUG, "Creating new instance from component factory {0} with configuration {1}",
                 new Object[] {getComponentMetadata().getName(), dictionary}, null );
 
         ComponentInstance instance;
-        cm.setFactoryProperties( dictionary );
+        cm.setFactoryProperties( ( Dictionary<String, Object> ) dictionary );
         //configure the properties
         cm.reconfigure( m_configuration, m_changeCount );
         // enable
@@ -199,13 +202,6 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
     }
 
 
-    public Object getInstance()
-    {
-        // this does not return the component instance actually
-        return null;
-    }
-
-
     public boolean hasConfiguration()
     {
         return m_hasConfiguration;
@@ -263,24 +259,14 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
         return props;
     }
 
-    State getSatisfiedState()
+    boolean hasInstance()
     {
-        return Factory.getInstance();
-    }
-
-    State getActiveState()
-    {
-        return Factory.getInstance();
+        return false;
     }
 
     protected boolean collectDependencies()
     {
         return true;
-    }
-
-    EdgeInfo getEdgeInfo( S implObject, DependencyManager<S, ?> dependencyManager) 
-    {
-        return null;
     }
 
     <T> void invokeUpdatedMethod( DependencyManager<S, T> dependencyManager, RefPair<T> ref, int trackingCount )
@@ -310,6 +296,7 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
 
     public void configurationDeleted( String pid )
     {
+        m_targetedPID = null;
         if ( pid.equals( getComponentMetadata().getConfigurationPid() ) )
         {
             log( LogService.LOG_DEBUG, "Handling configuration removal", null );
@@ -343,8 +330,15 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
     }
 
 
-    public void configurationUpdated( String pid, Dictionary<String, Object> configuration, long changeCount )
+    public void configurationUpdated( String pid, Dictionary<String, Object> configuration, long changeCount, TargetedPID targetedPid )
     {
+        if ( m_targetedPID != null && !m_targetedPID.equals( targetedPid ))
+        {
+            log( LogService.LOG_ERROR, "ImmediateComponentHolder unexpected change in targetedPID from {0} to {1}",
+                    new Object[] {m_targetedPID, targetedPid}, null);
+            throw new IllegalStateException("Unexpected targetedPID change");
+        }
+        m_targetedPID = targetedPid;
         if ( configuration != null )
         {
             if ( changeCount <= m_changeCount )
@@ -423,13 +417,13 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
 
     public Component[] getComponents()
     {
-        List<AbstractComponentManager> cms = getComponentList();
+        List<AbstractComponentManager<S>> cms = getComponentList();
         return cms.toArray( new Component[ cms.size() ] );
     }
 
-    protected List<AbstractComponentManager> getComponentList()
+    protected List<AbstractComponentManager<S>> getComponentList()
     {
-        List<AbstractComponentManager> cms = new ArrayList<AbstractComponentManager>( );
+        List<AbstractComponentManager<S>> cms = new ArrayList<AbstractComponentManager<S>>( );
         cms.add( this );
         getComponentManagers( m_componentInstances, cms );
         return cms;
@@ -464,7 +458,7 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
      */
     public void disposeComponents( int reason )
     {
-        List<AbstractComponentManager> cms = new ArrayList<AbstractComponentManager>( );
+        List<AbstractComponentManager<S>> cms = new ArrayList<AbstractComponentManager<S>>( );
         getComponentManagers( m_componentInstances, cms );
         for ( AbstractComponentManager acm: cms )
         {
@@ -499,13 +493,13 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
      * instance. The component manager is kept in the internal set of created
      * components. The component is neither configured nor enabled.
      */
-    private ImmediateComponentManager createComponentManager()
+    private ImmediateComponentManager<S> createComponentManager()
     {
-        return new ComponentFactoryNewInstance( getActivator(), this, getComponentMetadata(), getComponentMethods() );
+        return new ComponentFactoryNewInstance<S>( getActivator(), this, getComponentMetadata(), getComponentMethods() );
     }
 
 
-    protected void getComponentManagers( Map componentMap, List componentManagers )
+    protected void getComponentManagers( Map<?, ImmediateComponentManager<S>> componentMap, List<AbstractComponentManager<S>> componentManagers )
     {
         if ( componentMap != null )
         {
@@ -516,19 +510,20 @@ public class ComponentFactoryImpl<S> extends AbstractComponentManager<S> impleme
         }
     }
 
-    static class ComponentFactoryNewInstance extends ImmediateComponentManager {
+    static class ComponentFactoryNewInstance<S> extends ImmediateComponentManager<S> {
 
         public ComponentFactoryNewInstance( BundleComponentActivator activator, ComponentHolder componentHolder,
                 ComponentMetadata metadata, ComponentMethods componentMethods )
         {
-            super( activator, componentHolder, metadata, componentMethods );
-        }
-
-        State getActiveState()
-        {
-            return FactoryInstance.getInstance();
+            super( activator, componentHolder, metadata, componentMethods, true );
         }
 
     }
+
+    public TargetedPID getConfigurationTargetedPID()
+    {
+        return m_targetedPID;
+    }
+
 
 }

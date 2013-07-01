@@ -16,8 +16,7 @@
   specific language governing permissions and limitations
   under the License.
 -->
-<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xmlns="http://maven.apache.org/POM/4.0.0"
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
         <groupId>org.apache.felix</groupId>
@@ -25,14 +24,65 @@
         <version>2.1</version>
         <relativePath>../../../pom/pom.xml</relativePath>
     </parent>
+
     <modelVersion>4.0.0</modelVersion>
+
     <artifactId>org.apache.felix.ipojo.runtime.core-it</artifactId>
-    <version>1.9.0-SNAPSHOT</version>
+    <version>1.10.2-SNAPSHOT</version>
     <name>Apache Felix iPOJO Runtime Project ~ Core Integration Tests</name>
     <packaging>pom</packaging>
 
+    <properties>
+        <!-- Tests are enabled only when the 'test' profile is activated  -->
+        <skipTestExecution>true</skipTestExecution>
+
+        <exam.version>3.0.1</exam.version>
+        <url.version>1.5.1</url.version>
+
+        <felix.version>4.2.0</felix.version>
+        <equinox.version>3.8.1.v20120830-144521</equinox.version>
+        <knoperflerfish.version>5.3.3</knoperflerfish.version>
+
+        <manipulator.version>1.10.0</manipulator.version>
+    </properties>
+
+    <modules>
+        <module>ipojo-core-annotations-test</module>
+        <module>ipojo-core-bad-configuration-test</module>
+        <module>ipojo-core-configuration-admin-test</module>
+        <module>ipojo-core-configuration-processor-test</module>
+        <module>ipojo-core-configuration-test</module>
+        <module>ipojo-core-external-handlers-test</module>
+        <module>ipojo-core-factory-test</module>
+        <module>ipojo-core-factory-version-test</module>
+        <module>ipojo-core-handler-test</module>
+        <module>ipojo-core-lifecycle-callback-test</module>
+        <module>ipojo-core-lifecycle-controller-test</module>
+        <module>ipojo-core-logger-test</module>
+        <module>ipojo-core-service-dependency-optional-test</module>
+        <module>ipojo-core-service-dependency-policies</module>
+        <module>ipojo-core-service-dependency-proxies</module>
+        <module>ipojo-core-service-dependency-test</module>
+        <module>ipojo-core-service-dependency-interceptor-test</module>
+        <module>ipojo-core-service-providing-test</module>
+        <module>ipojo-api-test</module>
+    </modules>
+
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>2.14.1</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <!-- TIME_FACTOR can be set from the command line with -DTIME_FACTOR=9-->
+                        <TIME_FACTOR>${TIME_FACTOR}</TIME_FACTOR>
+                    </systemPropertyVariables>
+                    <skipTests>${skipTestExecution}</skipTests>
+                </configuration>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -75,19 +125,22 @@
                     </includes>
                     <excludes>
                         <exclude>src/main/appended-resources/**</exclude>
-                        <exclude>**/*.iml</exclude> <!-- Exclude iml files -->
-                        <exclude>src/it/*/target/**/*</exclude> <!-- Exclude sub target folders -->
+                        <exclude>**/*.iml</exclude>
                     </excludes>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>2.4</version>
+                <configuration>
+                    <skip>true</skip>
                 </configuration>
             </plugin>
         </plugins>
 
     </build>
 
-    <properties>
-        <exam.version>3.0.1</exam.version>
-        <url.version>1.5.1</url.version>
-    </properties>
 
     <dependencies>
 
@@ -120,13 +173,6 @@
         </dependency>
 
         <dependency>
-            <groupId>org.apache.felix</groupId>
-            <artifactId>org.apache.felix.framework</artifactId>
-            <version>4.2.0</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-core</artifactId>
             <version>0.9.6</version>
@@ -139,7 +185,6 @@
             <version>0.9.6</version>
             <scope>test</scope>
         </dependency>
-
 
         <dependency>
             <groupId>junit</groupId>
@@ -164,18 +209,31 @@
             <groupId>org.ow2.chameleon.testing</groupId>
             <artifactId>tinybundles-ipojo</artifactId>
             <version>0.3.0</version>
+            <scope>test</scope>
         </dependency>
 
         <dependency>
             <groupId>org.apache.felix</groupId>
             <artifactId>org.apache.felix.ipojo.manipulator</artifactId>
-            <version>1.9.0-SNAPSHOT</version>
+            <version>${manipulator.version}</version>
         </dependency>
 
         <dependency>
             <groupId>org.apache.felix</groupId>
             <artifactId>org.apache.felix.ipojo</artifactId>
-            <version>1.9.0-SNAPSHOT</version>
+            <version>1.10.2-SNAPSHOT</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.osgi</groupId>
+                    <artifactId>org.osgi.core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.felix</groupId>
+            <artifactId>org.apache.felix.ipojo.annotations</artifactId>
+            <version>1.10.2-SNAPSHOT</version>
         </dependency>
 
         <dependency>
@@ -194,8 +252,14 @@
         <dependency>
             <groupId>org.ow2.chameleon.testing</groupId>
             <artifactId>osgi-helpers</artifactId>
-            <version>0.6.0</version>
+            <version>0.6.1</version>
             <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.osgi</groupId>
+                    <artifactId>org.osgi.core</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
 
@@ -206,12 +270,24 @@
             We must use the trunk version because of the changes introduced by the new interception API.
             -->
             <version>1.9.0-SNAPSHOT</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.osgi</groupId>
+                    <artifactId>org.osgi.core</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
             <groupId>org.apache.felix</groupId>
             <artifactId>org.apache.felix.log</artifactId>
             <version>1.0.1</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.osgi</groupId>
+                    <artifactId>org.osgi.core</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
@@ -219,69 +295,21 @@
             <artifactId>pax-url-wrap</artifactId>
             <version>1.5.2</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.easytesting</groupId>
+            <artifactId>fest-assert</artifactId>
+            <version>1.4</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.felix</groupId>
+            <artifactId>org.apache.felix.framework</artifactId>
+            <version>${felix.version}</version>
+        </dependency>
     </dependencies>
 
     <profiles>
-        <profile>
-            <id>release</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-assembly-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>make-assembly</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>single</goal>
-                                </goals>
-                                <configuration>
-                                    <descriptorRefs>
-                                        <descriptorRef>project</descriptorRef>
-                                    </descriptorRefs>
-                                    <!-- we don't want to attach all the assemblies, such as bz2 -->
-                                    <attach>false</attach>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <!-- only attach the project and bin assemblies, in tar.gz and zip flavors -->
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>attach-assemblies</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>attach-artifact</goal>
-                                </goals>
-                                <configuration>
-                                    <artifacts>
-                                        <artifact>
-                                            <file>
-                                                ${project.build.directory}/${project.artifactId}-${project.version}-project.tar.gz
-                                            </file>
-                                            <classifier>project</classifier>
-                                            <type>tar.gz</type>
-                                        </artifact>
-                                        <artifact>
-                                            <file>
-                                                ${project.build.directory}/${project.artifactId}-${project.version}-project.zip
-                                            </file>
-                                            <classifier>project</classifier>
-                                            <type>zip</type>
-                                        </artifact>
-                                    </artifacts>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-
         <profile>
             <id>knopflerfish</id>
             <activation>
@@ -304,7 +332,7 @@
                 <dependency>
                     <groupId>org.knopflerfish</groupId>
                     <artifactId>framework</artifactId>
-                    <version>5.2.0</version>
+                    <version>${knoperflerfish.version}</version>
                     <scope>test</scope>
                 </dependency>
             </dependencies>
@@ -326,7 +354,7 @@
                 <dependency>
                     <groupId>org.eclipse.tycho</groupId>
                     <artifactId>org.eclipse.osgi</artifactId>
-                    <version>3.8.1.v20120830-144521</version>
+                    <version>${equinox.version}</version>
                     <scope>test</scope>
                 </dependency>
             </dependencies>
@@ -348,111 +376,16 @@
                 <dependency>
                     <groupId>org.apache.felix</groupId>
                     <artifactId>org.apache.felix.framework</artifactId>
-                    <version>4.2.0</version>
-                    <scope>test</scope>
+                    <version>${felix.version}</version>
                 </dependency>
             </dependencies>
         </profile>
 
         <profile>
             <id>test</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-invoker-plugin</artifactId>
-                        <version>1.8</version>
-                        <configuration>
-                            <streamLogs>true</streamLogs>
-                            <goals>
-                                <goal>clean</goal>
-                                <goal>test</goal>
-                            </goals>
-                            <cloneClean>true</cloneClean>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <id>regular</id>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <configuration>
-                                    <profiles>
-                                        <profile>felix</profile>
-                                    </profiles>
-                                    <cloneProjectsTo>${project.build.directory}/regular</cloneProjectsTo>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-
-        <profile>
-            <id>test-all</id>
-            <activation>
-                <activeByDefault>false</activeByDefault>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-invoker-plugin</artifactId>
-                        <version>1.8</version>
-                        <configuration>
-                            <streamLogs>true</streamLogs>
-                            <goals>
-                                <goal>clean</goal>
-                                <goal>test</goal>
-                            </goals>
-                            <cloneClean>true</cloneClean>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <id>equinox-native</id>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <configuration>
-                                    <profiles>
-                                        <profile>equinox</profile>
-                                    </profiles>
-                                    <cloneProjectsTo>${project.build.directory}/equinox-native</cloneProjectsTo>
-
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>felix-native</id>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <configuration>
-                                    <profiles>
-                                        <profile>felix</profile>
-                                    </profiles>
-                                    <cloneProjectsTo>${project.build.directory}/felix-native</cloneProjectsTo>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>knopflerfish-native</id>
-                                <goals>
-                                    <goal>run</goal>
-                                </goals>
-                                <configuration>
-                                    <profiles>
-                                        <profile>knopflerfish</profile>
-                                    </profiles>
-                                    <cloneProjectsTo>${project.build.directory}/knopflerfish-native</cloneProjectsTo>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
+            <properties>
+                <skipTestExecution>false</skipTestExecution>
+            </properties>
         </profile>
     </profiles>
 </project>

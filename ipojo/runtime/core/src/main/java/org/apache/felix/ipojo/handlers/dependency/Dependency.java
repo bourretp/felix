@@ -288,7 +288,7 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
                         } else {
                             // The service left already, or the service object cannot be created.
                             // We consider it as a departure.
-                            removedService(refs[i],  null);
+                            m_serviceReferenceManager.removedService(refs[i], null);
                         }
                     }
                 } else {
@@ -299,7 +299,7 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
                     } else {
                         // The service left already, or the service object cannot be created.
                         // We consider it as a departure.
-                        removedService(refs[0],  null);
+                        m_serviceReferenceManager.removedService(refs[0], null);
                     }
                 }
             }
@@ -397,7 +397,7 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
                         // We can't get the service object (https://issues.apache.org/jira/browse/FELIX-3896).
                         // This is probably because the service is leaving.
                         // We consider it as a departure.
-                        removedService(ref, null);
+                        m_serviceReferenceManager.removedService(ref, null);
                     }
                 }
             }
@@ -419,11 +419,9 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
         } catch (NoClassDefFoundError e) {
             // A NoClassDefFoundError is thrown if the specification uses a class not accessible by the actual instance.
             // It generally comes from a missing import.
-            throw new IllegalStateException("Cannot create the Nullable object, a referenced class cannot be loaded: " + e.getMessage());
+            throw new IllegalStateException("Cannot create the Nullable object, a referenced class cannot be loaded", e);
         } catch (Throwable e) { // Catch any other exception that can occurs
-            throw new IllegalStateException(
-                    "Cannot create the Nullable object, an unexpected error occurs: "
-                            + e.getMessage());
+            throw new IllegalStateException("Cannot create the Nullable object, an unexpected error occurs", e);
         }
 
         return m_nullable;
@@ -446,13 +444,13 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
                     Class clazz = getHandler().getInstanceManager().getContext().getBundle().loadClass(m_di);
                     m_nullable = clazz.newInstance();
                 } catch (IllegalAccessException e) {
-                    throw new IllegalStateException("Cannot load the default-implementation " + m_di + " : " + e.getMessage());
+                    throw new IllegalStateException("Cannot load the default-implementation " + m_di, e);
                 } catch (InstantiationException e) {
-                    throw new IllegalStateException("Cannot load the default-implementation " + m_di + " : " + e.getMessage());
+                    throw new IllegalStateException("Cannot load the default-implementation " + m_di, e);
                 } catch (ClassNotFoundException e) {
-                    throw new IllegalStateException("Cannot load the default-implementation " + m_di + " : " + e.getMessage());
+                    throw new IllegalStateException("Cannot load the default-implementation " + m_di, e);
                 } catch (Throwable e) { // Catch any other exception
-                    throw new IllegalStateException("Cannot load the default-implementation (unexpected exception) " + m_di + " : " + e.getMessage());
+                    throw new IllegalStateException("Cannot load the default-implementation (unexpected exception) " + m_di, e);
                 }
             }
         }
@@ -582,7 +580,7 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
      * Get the used service references list.
      * @return the used service reference or null if no service reference are available.
      */
-    public List getServiceReferencesAsList() {
+    public List<ServiceReference> getServiceReferencesAsList() {
         ServiceReference[] refs = super.getServiceReferences();
         if (refs == null) {
             return null;
@@ -741,7 +739,7 @@ public class Dependency extends DependencyModel implements FieldInterceptor, Met
                     }
                 } catch (ArrayStoreException e) {
                     m_handler.error("Cannot create the array - Check that the bundle can access the service interface", e);
-                    throw new RuntimeException("Cannot create the array - Check that the bundle can access the service interface : " + e.getMessage());
+                    throw new RuntimeException("Cannot create the array - Check that the bundle can access the service interface", e);
                 }
             } else if (m_type == DependencyHandler.LIST) {
                 if (refs == null) {

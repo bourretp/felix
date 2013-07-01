@@ -43,6 +43,7 @@ import org.apache.felix.ipojo.composite.service.instantiator.SvcInstance;
 import org.apache.felix.ipojo.metadata.Element;
 import org.apache.felix.ipojo.parser.ManifestMetadataParser;
 import org.apache.felix.ipojo.parser.ParseException;
+import org.apache.felix.ipojo.util.DependencyMetadataHelper;
 import org.apache.felix.ipojo.util.DependencyModel;
 import org.apache.felix.ipojo.util.DependencyStateListener;
 import org.osgi.framework.BundleContext;
@@ -157,12 +158,12 @@ public class ProvidedServiceHandler extends CompositeHandler implements Dependen
                 try {
                     fil = m_context.createFilter(filter);
                 } catch (InvalidSyntaxException e) {
-                    throw new ConfigurationException("An exporter filter is invalid " + filter + " : " + e.getMessage());
+                    throw new ConfigurationException("An exporter filter is invalid " + filter, e);
                 }
 
-                Comparator cmp = DependencyModel.getComparator(provides[i], m_context);
-                int policy = DependencyModel.getPolicy(provides[i]);
-                Class spec = DependencyModel.loadSpecification(specification, m_context);
+                Comparator cmp = DependencyMetadataHelper.getComparator(provides[i], m_context);
+                int policy = DependencyMetadataHelper.getPolicy(provides[i]);
+                Class spec = DependencyMetadataHelper.loadSpecification(specification, m_context);
 
                 ServiceExporter imp = new ServiceExporter(spec, fil, aggregate, optional, cmp, policy, getCompositeManager().getServiceContext(), m_context, this, getCompositeManager());
                 m_exporters.add(imp);
@@ -350,16 +351,16 @@ public class ProvidedServiceHandler extends CompositeHandler implements Dependen
             return; // No specification field
         } catch (ClassNotFoundException e) {
             error("[" + getCompositeManager().getInstanceName() + "] The service specification " + svc.getSpecification() + " cannot be load");
-            throw new CompositionException("The service specification " + svc.getSpecification() + " cannot be load : " + e.getMessage());
+            throw new CompositionException("The service specification " + svc.getSpecification() + " cannot be loaded", e);
         } catch (IllegalArgumentException e) {
             error("[" + getCompositeManager().getInstanceName() + "] The field 'specification' of the service specification " + svc.getSpecification() + " is not accessible : " + e.getMessage());
-            throw new CompositionException("The field 'specification' of the service specification " + svc.getSpecification() + " is not accessible : " + e.getMessage());
+            throw new CompositionException("The field 'specification' of the service specification " + svc.getSpecification() + " is not accessible", e);
         } catch (IllegalAccessException e) {
             error("[" + getCompositeManager().getInstanceName() + "] The field 'specification' of the service specification " + svc.getSpecification() + " is not accessible : " + e.getMessage());
-            throw new CompositionException("The field 'specification' of the service specification " + svc.getSpecification() + " is not accessible : " + e.getMessage());
+            throw new CompositionException("The field 'specification' of the service specification " + svc.getSpecification() + " is not accessible", e);
         } catch (ParseException e) {
             error("[" + getCompositeManager().getInstanceName() + "] The field 'specification' of the service specification " + svc.getSpecification() + " does not contain a valid String : " + e.getMessage());
-            throw new CompositionException("The field 'specification' of the service specification " + svc.getSpecification() + " does not contain a valid String : " + e.getMessage());
+            throw new CompositionException("The field 'specification' of the service specification " + svc.getSpecification() + " does not contain a valid String", e);
         }
     }
 
@@ -428,7 +429,7 @@ public class ProvidedServiceHandler extends CompositeHandler implements Dependen
                     handlerManager.init(getCompositeManager(), new Element("composite", ""), new Properties());
                 } catch (ConfigurationException e) {
                     error("Internal error : cannot configure the Import Handler : " + e.getMessage());
-                    throw new CompositionException("Internal error : cannot configure the Import Handler : " + e.getMessage());
+                    throw new CompositionException("Internal error : cannot configure the Import Handler", e);
                 }
                 handler = (ServiceDependencyHandler) handlerManager.getHandler();
                 getCompositeManager().addCompositeHandler(handlerManager);
@@ -447,14 +448,14 @@ public class ProvidedServiceHandler extends CompositeHandler implements Dependen
             try {
                 fil = getCompositeManager().getGlobalContext().createFilter(filter);
             } catch (InvalidSyntaxException e) {
-                throw new CompositionException("A required filter " + filter + " is malformed : " + e.getMessage());
+                throw new CompositionException("A required filter " + filter + " is malformed", e);
             }
 
             Class specToImport = null;
             try {
                 specToImport = getCompositeManager().getGlobalContext().getBundle().loadClass(spec);
             } catch (ClassNotFoundException e) {
-                throw new CompositionException("A required specification cannot be loaded : " + spec);
+                throw new CompositionException("A required specification cannot be loaded : " + spec, e);
             }
 
             ServiceImporter importer = new ServiceImporter(specToImport, fil, agg, opt, null, DependencyModel.DYNAMIC_BINDING_POLICY, context, null, handler);

@@ -19,12 +19,10 @@
 
 package org.apache.felix.ipojo.extender.internal;
 
+import org.apache.felix.ipojo.ConfigurationTracker;
 import org.apache.felix.ipojo.EventDispatcher;
 import org.apache.felix.ipojo.extender.internal.linker.DeclarationLinker;
-import org.apache.felix.ipojo.extender.internal.processor.ChainedBundleProcessor;
-import org.apache.felix.ipojo.extender.internal.processor.ComponentsBundleProcessor;
-import org.apache.felix.ipojo.extender.internal.processor.ExtensionBundleProcessor;
-import org.apache.felix.ipojo.extender.internal.processor.QueuingActivationProcessor;
+import org.apache.felix.ipojo.extender.internal.processor.*;
 import org.apache.felix.ipojo.extender.internal.queue.ExecutorQueueService;
 import org.apache.felix.ipojo.extender.internal.queue.PrefixedThreadFactory;
 import org.apache.felix.ipojo.extender.internal.queue.SynchronousQueueService;
@@ -34,11 +32,13 @@ import org.apache.felix.ipojo.extender.internal.queue.pref.PreferenceQueueServic
 import org.apache.felix.ipojo.extender.internal.queue.pref.enforce.EnforcedQueueService;
 import org.apache.felix.ipojo.util.Logger;
 import org.osgi.framework.*;
+import org.osgi.util.tracker.BundleTracker;
+import org.osgi.util.tracker.BundleTrackerCustomizer;
 
 /**
  * iPOJO main activator.
  */
-public class Extender implements BundleActivator, SynchronousBundleListener {
+public class Extender implements BundleActivator {
     /**
      * Enables the iPOJO internal dispatcher.
      * This internal dispatcher helps the OSGi framework to support large
@@ -95,6 +95,11 @@ public class Extender implements BundleActivator, SynchronousBundleListener {
     private LifecycleQueueService m_queueService;
 
     /**
+     * Track ACTIVE bundles.
+     */
+    private BundleTracker m_tracker;
+
+    /**
      * The iPOJO bundle is starting.
      * This method configures the iPOJO system (internal dispatcher and bundle processing). Then it initiates the
      * bundle processing.
@@ -118,8 +123,12 @@ public class Extender implements BundleActivator, SynchronousBundleListener {
             EventDispatcher.create(context);
         }
 
+        // Initialize ConfigurationTracker
+        ConfigurationTracker.initialize();
+
         BundleProcessor extensionBundleProcessor = new ExtensionBundleProcessor(m_logger);
         BundleProcessor componentsProcessor = new ComponentsBundleProcessor(m_logger);
+        BundleProcessor configurationProcessor = new ConfigurationProcessor(m_logger);
         if (SYNCHRONOUS_PROCESSING_ENABLED) {
             m_queueService = new EnforcedQueueService(
                     new HeaderPreferenceSelection(),
@@ -133,6 +142,7 @@ public class Extender implements BundleActivator, SynchronousBundleListener {
 
             extensionBundleProcessor = new QueuingActivationProcessor(extensionBundleProcessor, m_queueService);
             componentsProcessor = new QueuingActivationProcessor(componentsProcessor, m_queueService);
+            configurationProcessor = new QueuingActivationProcessor(configurationProcessor, m_queueService);
         }
         m_queueService.start();
 
@@ -140,23 +150,31 @@ public class Extender implements BundleActivator, SynchronousBundleListener {
         m_linker = new DeclarationLinker(context, m_queueService);
         m_linker.start();
 
-        m_processor = ChainedBundleProcessor.create(extensionBundleProcessor, componentsProcessor);
+        m_processor = ChainedBundleProcessor.create(extensionBundleProcessor, componentsProcessor, configurationProcessor);
 
         m_processor.start();
 
         // Begin by initializing core handlers
         m_processor.activate(m_bundle);
 
-        synchronized (this) {
-            // listen to any changes in bundles.
-            m_context.addBundleListener(this);
-            // compute already started bundles.
-            for (int i = 0; i < context.getBundles().length; i++) {
-                if (context.getBundles()[i].getState() == Bundle.ACTIVE) {
-                    m_processor.activate(context.getBundles()[i]);
+        m_tracker = new BundleTracker(context, Bundle.ACTIVE, new BundleTrackerCustomizer() {
+            public Object addingBundle(final Bundle bundle, final BundleEvent event) {
+                if (bundle.getBundleId() == m_bundle.getBundleId()) {
+                    // Not interested in our own bundle
+                    return null;
                 }
+                m_processor.activate(bundle);
+                return bundle;
             }
-        }
+
+            public void modifiedBundle(final Bundle bundle, final BundleEvent event, final Object object) {}
+
+            public void removedBundle(final Bundle bundle, final BundleEvent event, final Object object) {
+                m_processor.deactivate(bundle);
+            }
+        });
+
+        m_tracker.open();
 
         m_logger.log(Logger.INFO, "iPOJO Main Extender started");
     }
@@ -168,7 +186,12 @@ public class Extender implements BundleActivator, SynchronousBundleListener {
      * @throws Exception something terrible happen
      */
     public void stop(BundleContext context) throws Exception {
-        context.removeBundleListener(this);
+        m_tracker.close();
+
+        m_processor.deactivate(m_bundle);
+
+        //Shutdown ConfigurationTracker
+        ConfigurationTracker.shutdown();
 
         m_processor.stop();
 
@@ -181,28 +204,6 @@ public class Extender implements BundleActivator, SynchronousBundleListener {
 
         m_logger.log(Logger.INFO, "iPOJO Main Extender stopped");
         m_context = null;
-    }
-
-    /**
-     * A bundle event was caught.
-     *
-     * @param event the event
-     */
-    public void bundleChanged(BundleEvent event) {
-        if (m_bundle.getBundleId() != (event.getBundle().getBundleId())) {
-            // Do not process our-self (already done)
-            switch (event.getType()) {
-                case BundleEvent.STARTED:
-                    // Put the bundle in the queue
-                    m_processor.activate(event.getBundle());
-                    break;
-                case BundleEvent.STOPPING:
-                    m_processor.deactivate(event.getBundle());
-                    break;
-                default:
-                    break;
-            }
-        }
     }
 
     /**

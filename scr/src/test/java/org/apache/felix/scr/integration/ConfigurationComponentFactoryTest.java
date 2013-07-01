@@ -53,6 +53,7 @@ public class ConfigurationComponentFactoryTest extends ComponentTestBase
     static
     {
         NONSTANDARD_COMPONENT_FACTORY_BEHAVIOR = true;
+        descriptorFile = "/integration_test_simple_factory_components.xml";
         // uncomment to enable debugging of this test class
         // paxRunnerVmOption = DEBUG_VM_OPTION;
     }
@@ -60,7 +61,7 @@ public class ConfigurationComponentFactoryTest extends ComponentTestBase
 
 
     @Test
-    public void test_component_factory_with_factory_configuration() throws InvalidSyntaxException, IOException
+    public void test_non_spec_component_factory_with_factory_configuration() throws InvalidSyntaxException, IOException
     {
         // this test is about non-standard behaviour of ComponentFactory services
 

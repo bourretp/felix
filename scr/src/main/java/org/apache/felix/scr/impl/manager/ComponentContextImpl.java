@@ -31,6 +31,7 @@ import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleContext;
 import org.osgi.framework.ServiceReference;
 import org.osgi.service.component.ComponentInstance;
+import org.osgi.service.log.LogService;
 
 
 /**
@@ -39,7 +40,7 @@ import org.osgi.service.component.ComponentInstance;
  */
 public class ComponentContextImpl<S> implements ExtComponentContext {
 
-    private final AbstractComponentManager<S> m_componentManager;
+    private final ImmediateComponentManager<S> m_componentManager;
     
     private final EdgeInfo[] edgeInfos;
     
@@ -53,7 +54,7 @@ public class ComponentContextImpl<S> implements ExtComponentContext {
     
     private final CountDownLatch accessibleLatch = new CountDownLatch(1);
 
-    ComponentContextImpl( AbstractComponentManager<S> componentManager, Bundle usingBundle, S implementationObject )
+    ComponentContextImpl( ImmediateComponentManager<S> componentManager, Bundle usingBundle, S implementationObject )
     {
         m_componentManager = componentManager;
         m_usingBundle = usingBundle;
@@ -85,7 +86,7 @@ public class ComponentContextImpl<S> implements ExtComponentContext {
         Arrays.fill( edgeInfos, null );
     }
 
-    protected AbstractComponentManager<S> getComponentManager()
+    protected ImmediateComponentManager<S> getComponentManager()
     {
         return m_componentManager;
     }
@@ -187,6 +188,18 @@ public class ComponentContextImpl<S> implements ExtComponentContext {
         }
         catch ( InterruptedException e )
         {
+            try
+            {
+                if (accessibleLatch.await( m_componentManager.getLockTimeout(), TimeUnit.MILLISECONDS ) && m_implementationAccessible)
+                {
+                    return m_implementationObject;
+                }
+            }
+            catch ( InterruptedException e1 )
+            {
+                m_componentManager.log( LogService.LOG_INFO, "Interrupted twice waiting for implementation object to become accessible", e1 );
+            }
+            Thread.currentThread().interrupt();
             return null;
         }
         return null;

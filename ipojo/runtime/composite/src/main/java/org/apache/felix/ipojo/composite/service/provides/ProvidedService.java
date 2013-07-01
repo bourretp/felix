@@ -30,6 +30,7 @@ import org.apache.felix.ipojo.UnacceptableConfiguration;
 import org.apache.felix.ipojo.composite.CompositeManager;
 import org.apache.felix.ipojo.composite.instance.InstanceHandler;
 import org.apache.felix.ipojo.metadata.Element;
+import org.apache.felix.ipojo.util.DependencyMetadataHelper;
 import org.apache.felix.ipojo.util.DependencyModel;
 import org.apache.felix.ipojo.util.DependencyStateListener;
 import org.apache.felix.ipojo.util.Logger;
@@ -120,14 +121,14 @@ public class ProvidedService implements DependencyStateListener {
         }
 
         try {
-            Class spec = DependencyModel.loadSpecification(m_composition.getSpecificationMetadata().getName(), m_context);
+            Class spec = DependencyMetadataHelper.loadSpecification(m_composition.getSpecificationMetadata().getName(), m_context);
             Filter filter = m_context.createFilter("(instance.name=" + m_instanceName + ")");
             // Create the exports
             m_exports = new ServiceExporter(spec, filter, false, false, null, DependencyModel.DYNAMIC_BINDING_POLICY, m_scope, m_context, this, m_manager);
         } catch (InvalidSyntaxException e) {
-            throw new CompositionException("A provided service filter is invalid : " + e.getMessage());
+            throw new CompositionException("A provided service filter is invalid", e);
         } catch (ConfigurationException e) {
-            throw new CompositionException("The class " + m_composition.getSpecificationMetadata().getName() + " cannot be loaded : " + e.getMessage());
+            throw new CompositionException("The class " + m_composition.getSpecificationMetadata().getName() + " cannot be loaded", e);
         }
     }
 
@@ -216,11 +217,11 @@ public class ProvidedService implements DependencyStateListener {
             try {
                 m_instance = m_factory.createComponentInstance(props, m_manager.getServiceContext());
             } catch (UnacceptableConfiguration e) {
-                throw new IllegalStateException("Cannot create the service implementation : " + e.getMessage());
+                throw new IllegalStateException("Cannot create the service implementation", e);
             } catch (MissingHandlerException e) {
-                throw new IllegalStateException("Cannot create the service implementation : " + e.getMessage());
+                throw new IllegalStateException("Cannot create the service implementation", e);
             } catch (ConfigurationException e) {
-                throw new IllegalStateException("Cannot create the service implementation : " + e.getMessage());
+                throw new IllegalStateException("Cannot create the service implementation", e);
             }
         } else {
             // We have to reconfigure the instance in order to inject up to date glue component instance.

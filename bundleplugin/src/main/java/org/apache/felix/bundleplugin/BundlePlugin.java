@@ -40,7 +40,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.jar.Attributes;
 import java.util.jar.Manifest;
 
@@ -65,14 +64,18 @@ import org.codehaus.plexus.archiver.UnArchiver;
 import org.codehaus.plexus.archiver.manager.ArchiverManager;
 import org.codehaus.plexus.util.DirectoryScanner;
 import org.codehaus.plexus.util.FileUtils;
+import org.codehaus.plexus.util.PropertyUtils;
 import org.codehaus.plexus.util.StringUtils;
 
+import aQute.bnd.header.Attrs;
 import aQute.bnd.osgi.Analyzer;
 import aQute.bnd.osgi.Builder;
 import aQute.bnd.osgi.Constants;
+import aQute.bnd.osgi.Descriptors.PackageRef;
 import aQute.bnd.osgi.EmbeddedResource;
 import aQute.bnd.osgi.FileResource;
 import aQute.bnd.osgi.Jar;
+import aQute.bnd.osgi.Packages;
 import aQute.bnd.osgi.Processor;
 import aQute.lib.spring.SpringXMLType;
 
@@ -124,12 +127,27 @@ public class BundlePlugin extends AbstractMojo
     protected String excludeDependencies;
 
     /**
+     * Final name of the bundle (without classifier or extension)
+     * 
+     * @parameter expression="${project.build.finalName}"
+     */ 
+    private String finalName; 
+
+    /**
      * Classifier type of the bundle to be installed.  For example, "jdk14".
      * Defaults to none which means this is the project's main bundle.
      *
      * @parameter
      */
     protected String classifier;
+
+    /**
+     * Packaging type of the bundle to be installed.  For example, "jar".
+     * Defaults to none which means use the same packaging as the project.
+     *
+     * @parameter
+     */
+    protected String packaging;
 
     /**
      * @component
@@ -369,13 +387,24 @@ public class BundlePlugin extends AbstractMojo
                 mainArtifact.setArtifactHandler( m_artifactHandlerManager.getArtifactHandler( "jar" ) );
             }
 
-            if ( null == classifier || classifier.trim().length() == 0 )
+            boolean customClassifier = null != classifier && classifier.trim().length() > 0;
+            boolean customPackaging = null != packaging && packaging.trim().length() > 0;
+
+            if ( customClassifier && customPackaging )
             {
-                mainArtifact.setFile( jarFile );
+                m_projectHelper.attachArtifact( currentProject, packaging, classifier, jarFile );
+            }
+            else if ( customClassifier )
+            {
+                m_projectHelper.attachArtifact( currentProject, jarFile, classifier );
+            }
+            else if ( customPackaging )
+            {
+                m_projectHelper.attachArtifact( currentProject, packaging, jarFile );
             }
             else
             {
-                m_projectHelper.attachArtifact( currentProject, jarFile, classifier );
+                mainArtifact.setFile( jarFile );
             }
 
             if ( unpackBundle )
@@ -421,7 +450,10 @@ public class BundlePlugin extends AbstractMojo
         properties.putAll( transformDirectives( originalInstructions ) );
 
         Builder builder = new Builder();
-        builder.setBase( getBase( currentProject ) );
+        synchronized ( BundlePlugin.class ) // protect setBase...getBndLastModified which uses static DateFormat 
+        {
+            builder.setBase( getBase( currentProject ) );
+        }
         builder.setProperties( sanitize( properties ) );
         if ( classpath != null )
         {
@@ -690,12 +722,18 @@ public class BundlePlugin extends AbstractMojo
 
             // First grab the external manifest file (if specified and different to target location)
             File externalManifestFile = archiveConfig.getManifestFile();
-            if ( null != externalManifestFile && externalManifestFile.exists()
-                && !externalManifestFile.equals( new File( manifestLocation, "MANIFEST.MF" ) ) )
+            if ( null != externalManifestFile )
             {
-                InputStream mis = new FileInputStream( externalManifestFile );
-                mavenManifest.read( mis );
-                mis.close();
+                if ( !externalManifestFile.isAbsolute() )
+                {
+                    externalManifestFile = new File( currentProject.getBasedir(), externalManifestFile.getPath() );
+                }
+                if ( externalManifestFile.exists() && !externalManifestFile.equals( new File( manifestLocation, "MANIFEST.MF" ) ) )
+                {
+                    InputStream mis = new FileInputStream( externalManifestFile );
+                    mavenManifest.read( mis );
+                    mis.close();
+                }
             }
 
             // Then apply customized entries from the jar plugin; note: manifest encoding is UTF8
@@ -1110,7 +1148,6 @@ public class BundlePlugin extends AbstractMojo
         {
             extension = "jar"; // just in case maven gets confused
         }
-        String finalName = currentProject.getBuild().getFinalName();
         if ( null != classifier && classifier.trim().length() > 0 )
         {
             return finalName + '-' + classifier + '.' + extension;
@@ -1182,6 +1219,16 @@ public class BundlePlugin extends AbstractMojo
 
         properties.putAll( currentProject.getProperties() );
         properties.putAll( currentProject.getModel().getProperties() );
+
+        for ( Iterator i = currentProject.getFilters().iterator(); i.hasNext(); )
+        {
+            File filterFile = new File( ( String ) i.next() );
+            if ( filterFile.isFile() )
+            {
+                properties.putAll( PropertyUtils.loadProperties( filterFile ) );
+            }
+        }
+
         if ( m_mavenSession != null )
         {
             try
@@ -1238,9 +1285,9 @@ public class BundlePlugin extends AbstractMojo
     }
 
 
-    private static void addLocalPackages( File outputDirectory, Analyzer analyzer )
+    private static void addLocalPackages( File outputDirectory, Analyzer analyzer ) throws IOException
     {
-        Collection packages = new TreeSet();
+        Packages packages = new Packages();
 
         if ( outputDirectory != null && outputDirectory.isDirectory() )
         {
@@ -1256,78 +1303,74 @@ public class BundlePlugin extends AbstractMojo
             String[] paths = scanner.getIncludedFiles();
             for ( int i = 0; i < paths.length; i++ )
             {
-                packages.add( getPackageName( paths[i] ) );
+                packages.put( analyzer.getPackageRef( getPackageName( paths[i] ) ) );
             }
         }
 
-        StringBuffer exportedPkgs = new StringBuffer();
-        StringBuffer privatePkgs = new StringBuffer();
+        Packages exportedPkgs = new Packages();
+        Packages privatePkgs = new Packages();
 
         boolean noprivatePackages = "!*".equals( analyzer.getProperty( Analyzer.PRIVATE_PACKAGE ) );
 
-        for ( Iterator i = packages.iterator(); i.hasNext(); )
+        for ( PackageRef pkg : packages.keySet() )
         {
-            String pkg = ( String ) i.next();
-
             // mark all source packages as private by default (can be overridden by export list)
-            if ( privatePkgs.length() > 0 )
-            {
-                privatePkgs.append( ';' );
-            }
-            privatePkgs.append( pkg );
+            privatePkgs.put( pkg );
 
             // we can't export the default package (".") and we shouldn't export internal packages 
-            if ( noprivatePackages || !( ".".equals( pkg ) || pkg.contains( ".internal" ) || pkg.contains( ".impl" ) ) )
+            String fqn = pkg.getFQN();
+            if ( noprivatePackages || !( ".".equals( fqn ) || fqn.contains( ".internal" ) || fqn.contains( ".impl" ) ) )
             {
-                if ( exportedPkgs.length() > 0 )
-                {
-                    exportedPkgs.append( ';' );
-                }
-                exportedPkgs.append( pkg );
+                exportedPkgs.put( pkg );
             }
         }
 
-        if ( analyzer.getProperty( Analyzer.EXPORT_PACKAGE ) == null )
+        Properties properties = analyzer.getProperties();
+        String exported = properties.getProperty( Analyzer.EXPORT_PACKAGE );
+        if ( exported == null )
         {
-            if ( analyzer.getProperty( Analyzer.EXPORT_CONTENTS ) == null )
+            if ( !properties.containsKey( Analyzer.EXPORT_CONTENTS ) )
             {
                 // no -exportcontents overriding the exports, so use our computed list
-                analyzer.setProperty( Analyzer.EXPORT_PACKAGE, exportedPkgs + ";-split-package:=merge-first" );
+                for ( Attrs attrs : exportedPkgs.values() )
+                {
+                    attrs.put( Constants.SPLIT_PACKAGE_DIRECTIVE, "merge-first" );
+                }
+                properties.setProperty( Analyzer.EXPORT_PACKAGE, Processor.printClauses( exportedPkgs ) );
             }
             else
             {
                 // leave Export-Package empty (but non-null) as we have -exportcontents
-                analyzer.setProperty( Analyzer.EXPORT_PACKAGE, "" );
+                properties.setProperty( Analyzer.EXPORT_PACKAGE, "" );
             }
         }
-        else
+        else if ( exported.indexOf( LOCAL_PACKAGES ) >= 0 )
         {
-            String exported = analyzer.getProperty( Analyzer.EXPORT_PACKAGE );
-            if ( exported.indexOf( LOCAL_PACKAGES ) >= 0 )
-            {
-                String newExported = StringUtils.replace( exported, LOCAL_PACKAGES, exportedPkgs.toString() );
-                analyzer.setProperty( Analyzer.EXPORT_PACKAGE, newExported );
-
-            }
+            String newExported = StringUtils.replace( exported, LOCAL_PACKAGES, Processor.printClauses( exportedPkgs ) );
+            properties.setProperty( Analyzer.EXPORT_PACKAGE, newExported );
         }
 
-        String internal = analyzer.getProperty( Analyzer.PRIVATE_PACKAGE );
+        String internal = properties.getProperty( Analyzer.PRIVATE_PACKAGE );
         if ( internal == null )
         {
-            if ( privatePkgs.length() > 0 )
+            if ( !privatePkgs.isEmpty() )
             {
-                analyzer.setProperty( Analyzer.PRIVATE_PACKAGE, privatePkgs + ";-split-package:=merge-first" );
+                for ( Attrs attrs : privatePkgs.values() )
+                {
+                    attrs.put( Constants.SPLIT_PACKAGE_DIRECTIVE, "merge-first" );
+                }
+                properties.setProperty( Analyzer.PRIVATE_PACKAGE, Processor.printClauses( privatePkgs ) );
             }
             else
             {
                 // if there are really no private packages then use "!*" as this will keep the Bnd Tool happy
-                analyzer.setProperty( Analyzer.PRIVATE_PACKAGE, "!*" );
+                properties.setProperty( Analyzer.PRIVATE_PACKAGE, "!*" );
             }
         }
         else if ( internal.indexOf( LOCAL_PACKAGES ) >= 0 )
         {
-            String newInternal = StringUtils.replace( internal, LOCAL_PACKAGES, privatePkgs.toString() );
-            analyzer.setProperty( Analyzer.PRIVATE_PACKAGE, newInternal );
+            String newInternal = StringUtils.replace( internal, LOCAL_PACKAGES, Processor.printClauses( privatePkgs ) );
+            properties.setProperty( Analyzer.PRIVATE_PACKAGE, newInternal );
         }
     }
 

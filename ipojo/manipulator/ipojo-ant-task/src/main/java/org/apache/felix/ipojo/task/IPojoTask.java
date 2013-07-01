@@ -24,7 +24,6 @@ import org.apache.felix.ipojo.manipulator.Pojoization;
 import org.apache.tools.ant.BuildException;
 import org.apache.tools.ant.Project;
 import org.apache.tools.ant.Task;
-import sun.awt.geom.AreaOp;
 
 /**
  * iPOJO Ant Task. This Ant task manipulates an input bundle.
@@ -52,7 +51,7 @@ public class IPojoTask extends Task {
 
     /**
      * Flag describing if we need or not use local XSD files
-     * (i.e. use the {@link SchemaResolver} or not).
+     * (i.e. use the {@link org.apache.felix.ipojo.xml.parser.SchemaResolver} or not).
      * If <code>true</code> the local XSD are not used.
      */
     private boolean m_ignoreLocalXSD = false;

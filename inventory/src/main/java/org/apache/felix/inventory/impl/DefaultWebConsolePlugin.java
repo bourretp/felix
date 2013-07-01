@@ -5,9 +5,9 @@
  * The ASF licenses this file to You under the Apache License, Version 2.0
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -33,7 +33,7 @@ public class DefaultWebConsolePlugin extends AbstractWebConsolePlugin implements
 
     /**
      * Constructor
-     * 
+     *
      * @param inventoryPrinterAdapter The adapter
      */
     DefaultWebConsolePlugin(final InventoryPrinterManagerImpl inventoryPrinterManager)
@@ -44,6 +44,11 @@ public class DefaultWebConsolePlugin extends AbstractWebConsolePlugin implements
     protected InventoryPrinterHandler getInventoryPrinterHandler()
     {
         return this;
+    }
+
+    protected InventoryPrinterHandler getInventoryPrinterHandler(final String label)
+    {
+        return this.inventoryPrinterManager.getHandler(label);
     }
 
     /**
@@ -85,7 +90,7 @@ public class DefaultWebConsolePlugin extends AbstractWebConsolePlugin implements
      */
     public void print(final PrintWriter printWriter, final Format format, final boolean isZip)
     {
-        final InventoryPrinterHandler[] handlers = this.inventoryPrinterManager.getAllHandlers();
+        final InventoryPrinterHandler[] handlers = this.inventoryPrinterManager.getHandlers(null);
         printWriter.print("Currently registered ");
         printWriter.print(String.valueOf(handlers.length));
         printWriter.println(" printer(s).");

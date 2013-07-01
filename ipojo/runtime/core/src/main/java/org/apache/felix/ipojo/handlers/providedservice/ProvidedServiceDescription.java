@@ -44,7 +44,7 @@ public class ProvidedServiceDescription {
     /**
      * The describe provided service.
      */
-    private ProvidedService m_ps;
+    private final ProvidedService m_ps;
 
     /**
      * Constructor.
@@ -52,6 +52,14 @@ public class ProvidedServiceDescription {
      */
     public ProvidedServiceDescription(ProvidedService ps) {
         m_ps = ps;
+    }
+
+    /**
+     * Gets the represented provided service.
+     * @return the provided service
+     */
+    public ProvidedService getProvidedService() {
+        return m_ps;
     }
 
     /**
@@ -98,7 +106,7 @@ public class ProvidedServiceDescription {
 
     /**
      * Gets provided service state.
-     * @return the state of the provided service (UNREGISTERED | REGISTRED).
+     * @return the state of the provided service (UNREGISTERED | REGISTERED).
      */
     public int getState() {
         return m_ps.getState();
@@ -154,6 +162,34 @@ public class ProvidedServiceDescription {
     public Object[] getServices() {
         return m_ps.getInstanceManager().getPojoObjects();
     }
-    
+
+    public int getPolicy() {
+        return m_ps.getPolicy();
+    }
+
+    public Class<? extends CreationStrategy> getCreationStrategy() {
+        return m_ps.getCreationStrategy();
+    }
+
+    /**
+     * Add the given listener to the provided service handler's list of listeners.
+     *
+     * @param listener the {@code ProvidedServiceListener} object to be added
+     * @throws NullPointerException if {@code listener} is {@code null}
+     */
+    public void addListener(ProvidedServiceListener listener) {
+        m_ps.addListener(listener);
+    }
+
+    /**
+     * Remove the given listener from the provided service handler's list of listeners.
+     *
+     * @param listener the {@code ProvidedServiceListener} object to be removed
+     * @throws NullPointerException if {@code listener} is {@code null}
+     * @throws java.util.NoSuchElementException if {@code listener} wasn't present the in provided service handler's list of listeners
+     */
+    public void removeListener(ProvidedServiceListener listener) {
+        m_ps.removeListener(listener);
+    }
 
 }

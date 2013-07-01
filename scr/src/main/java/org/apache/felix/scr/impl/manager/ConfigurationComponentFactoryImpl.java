@@ -27,6 +27,7 @@ import java.util.Map;
 
 import org.apache.felix.scr.Component;
 import org.apache.felix.scr.impl.BundleComponentActivator;
+import org.apache.felix.scr.impl.TargetedPID;
 import org.apache.felix.scr.impl.config.ComponentHolder;
 import org.apache.felix.scr.impl.helper.ComponentMethods;
 import org.apache.felix.scr.impl.metadata.ComponentMetadata;
@@ -48,7 +49,7 @@ import org.osgi.service.log.LogService;
  * with earlier releases of the Apache Felix Declarative Services implementation.
  * But keep in mind, that this is non-standard behaviour.
  */
-public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S> implements ComponentHolder
+public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S>
 {
 
     /**
@@ -56,7 +57,7 @@ public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S
      * {@link org.apache.felix.scr.impl.manager.ImmediateComponentManager} for configuration updating this map is
      * lazily created.
      */
-    private Map<String, ImmediateComponentManager> m_configuredServices;
+    private final Map<String, ImmediateComponentManager<S>> m_configuredServices = new HashMap<String, ImmediateComponentManager<S>>();
 
     public ConfigurationComponentFactoryImpl( BundleComponentActivator activator, ComponentMetadata metadata )
     {
@@ -71,9 +72,9 @@ public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S
      * configuration instances are to enabled as a consequence of activating
      * the component factory.
      */
-    protected boolean createComponent()
+    boolean getServiceInternal()
     {
-        List cms = new ArrayList( );
+        List<AbstractComponentManager<S>> cms = new ArrayList<AbstractComponentManager<S>>( );
         getComponentManagers( m_configuredServices, cms );
         for ( Iterator i = cms.iterator(); i.hasNext(); )
         {
@@ -91,13 +92,14 @@ public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S
      * configuration instances are to disabled as a consequence of deactivating
      * the component factory.
      */
+    @Override
     protected void deleteComponent( int reason )
     {
-        List cms = new ArrayList( );
+        List<AbstractComponentManager<S>> cms = new ArrayList<AbstractComponentManager<S>>( );
         getComponentManagers( m_configuredServices, cms );
-        for ( Iterator i = cms.iterator(); i.hasNext(); )
+        for ( AbstractComponentManager<S> cm: cms )
         {
-            ((AbstractComponentManager)i.next()).disable();
+            cm.disable();
         }
     }
 
@@ -112,45 +114,34 @@ public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S
         }
         else
         {
-            Map configuredServices = m_configuredServices;
-            if ( configuredServices != null )
+            ImmediateComponentManager<S> cm;
+            synchronized ( m_configuredServices )
             {
-                ImmediateComponentManager cm;
-                synchronized ( configuredServices )
-                {
-                    cm = ( ImmediateComponentManager ) configuredServices.remove( pid );
-                }
+                cm = m_configuredServices.remove( pid );
+            }
 
-                if ( cm != null )
-                {
-                    log( LogService.LOG_DEBUG, "Disposing component after configuration deletion", null );
+            if ( cm != null )
+            {
+                log( LogService.LOG_DEBUG, "Disposing component after configuration deletion", null );
 
-                    cm.dispose();
-                }
+                cm.dispose();
             }
         }
     }
 
 
-    public void configurationUpdated( String pid, Dictionary<String, Object> configuration, long changeCount )
+    public void configurationUpdated( String pid, Dictionary<String, Object> configuration, long changeCount, TargetedPID targetedPid )
     {
         if ( pid.equals( getComponentMetadata().getConfigurationPid() ) )
         {
-            super.configurationUpdated( pid, configuration, changeCount );
+            super.configurationUpdated( pid, configuration, changeCount, targetedPid );
         }
         else   //non-spec backwards compatible
         {
-            ImmediateComponentManager cm;
-            Map<String, ImmediateComponentManager> configuredServices = m_configuredServices;
-            if ( configuredServices != null )
+            ImmediateComponentManager<S> cm;
+            synchronized ( m_configuredServices )
             {
-                cm = ( ImmediateComponentManager ) configuredServices.get( pid );
-            }
-            else
-            {
-                m_configuredServices = new HashMap<String, ImmediateComponentManager>();
-                configuredServices = m_configuredServices;
-                cm = null;
+                cm = m_configuredServices.get( pid );
             }
 
             if ( cm == null )
@@ -168,8 +159,11 @@ public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S
                     cm.enable( false );
                 }
 
-                // keep a reference for future updates
-                configuredServices.put( pid, cm );
+                synchronized ( m_configuredServices )
+                {
+                    // keep a reference for future updates
+                    m_configuredServices.put( pid, cm );
+                }
 
             }
             else
@@ -183,9 +177,9 @@ public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S
 
     public Component[] getComponents()
     {
-        List cms = getComponentList();
+        List<AbstractComponentManager<S>> cms = getComponentList();
         getComponentManagers( m_configuredServices, cms );
-        return (Component[]) cms.toArray( new Component[ cms.size() ] );
+        return cms.toArray( new Component[ cms.size() ] );
     }
 
 
@@ -199,14 +193,14 @@ public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S
     {
         super.disposeComponents( reason );
 
-        List<AbstractComponentManager> cms = new ArrayList<AbstractComponentManager>( );
+        List<AbstractComponentManager<S>> cms = new ArrayList<AbstractComponentManager<S>>( );
         getComponentManagers( m_configuredServices, cms );
         for ( AbstractComponentManager acm: cms )
         {
             acm.dispose( reason );
         }
 
-        m_configuredServices = null;
+        m_configuredServices.clear();
 
         // finally dispose the component factory itself
         dispose( reason );
@@ -219,12 +213,11 @@ public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S
         {
             return m_changeCount;
         }
-        if (m_configuredServices == null)
+        synchronized ( m_configuredServices )
         {
-            return -1;
+            ImmediateComponentManager icm = m_configuredServices.get( pid );
+            return icm == null? -1: icm.getChangeCount();
         }
-        ImmediateComponentManager icm =  m_configuredServices.get( pid );
-        return icm == null? -1: icm.getChangeCount();
     }
 
 
@@ -237,17 +230,17 @@ public class ConfigurationComponentFactoryImpl<S> extends ComponentFactoryImpl<S
      * instance. The component manager is kept in the internal set of created
      * components. The component is neither configured nor enabled.
      */
-    private ImmediateComponentManager createConfigurationComponentManager()
+    private ImmediateComponentManager<S> createConfigurationComponentManager()
     {
-        return new ComponentFactoryConfiguredInstance( getActivator(), this, getComponentMetadata(), getComponentMethods() );
+        return new ComponentFactoryConfiguredInstance<S>( getActivator(), this, getComponentMetadata(), getComponentMethods() );
     }
 
-    static class ComponentFactoryConfiguredInstance extends ImmediateComponentManager {
+    static class ComponentFactoryConfiguredInstance<S> extends ImmediateComponentManager<S> {
 
         public ComponentFactoryConfiguredInstance( BundleComponentActivator activator, ComponentHolder componentHolder,
                 ComponentMetadata metadata, ComponentMethods componentMethods )
         {
-            super( activator, componentHolder, metadata, componentMethods );
+            super( activator, componentHolder, metadata, componentMethods, true );
         }
 
         public boolean isImmediate()

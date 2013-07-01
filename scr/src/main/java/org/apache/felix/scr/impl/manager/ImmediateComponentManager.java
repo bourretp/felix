@@ -72,7 +72,9 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
     
     private volatile long m_changeCount = -1;
 
-    /**
+    private final ThreadLocal<Boolean> m_circularReferences = new ThreadLocal<Boolean>();
+    
+   /**
      * The constructor receives both the activator and the metadata
      *
      * @param activator
@@ -82,7 +84,13 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
     public ImmediateComponentManager( BundleComponentActivator activator, ComponentHolder componentHolder,
             ComponentMetadata metadata, ComponentMethods componentMethods )
     {
-        super( activator, metadata, componentMethods );
+        this(activator, componentHolder, metadata, componentMethods, false);
+    }
+    
+    public ImmediateComponentManager( BundleComponentActivator activator, ComponentHolder componentHolder,
+            ComponentMetadata metadata, ComponentMethods componentMethods, boolean factoryInstance )
+    {
+        super( activator, metadata, componentMethods, factoryInstance );
 
         m_componentHolder = componentHolder;
     }
@@ -178,7 +186,7 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
      *
      * @return the object that implements the services
      */
-    Object getInstance()
+    S getInstance()
     {
         return m_componentContext == null? null: m_componentContext.getImplementationObject( true );
     }
@@ -255,7 +263,7 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
             // if a dependency turned unresolved since the validation check,
             // creating the instance fails here, so we deactivate and return
             // null.
-            boolean open = dm.open( implementationObject );
+            boolean open = dm.open( implementationObject, componentContext.getEdgeInfo( dm ) );
             if ( !open )
             {
                 log( LogService.LOG_ERROR, "Cannot create component instance due to failure to bind reference {0}",
@@ -265,7 +273,7 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
                 // make sure, we keep no bindings
                 for ( DependencyManager md: getReversedDependencyManagers() )
                 {
-                    md.close( implementationObject );
+                    md.close( implementationObject, componentContext.getEdgeInfo( md ) );
                 }
 
                 setter.resetImplementationObject( implementationObject );
@@ -282,7 +290,7 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
             // containing the exception with the Log Service and activation fails
             for ( DependencyManager md: getReversedDependencyManagers() )
             {
-                md.close( implementationObject );
+                md.close( implementationObject, componentContext.getEdgeInfo( md ) );
             }
 
             // make sure the implementation object is not available
@@ -293,6 +301,8 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
         else
         {
             componentContext.setImplementationAccessible( true );
+            m_circularReferences.remove();
+            //this may cause a getService as properties now match a filter.
             setServiceProperties( result );
         }
 
@@ -319,24 +329,14 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
         // 2. Unbind any bound services
         for ( DependencyManager md: getReversedDependencyManagers() )
         {
-            md.close( implementationObject );
+            md.close( implementationObject, componentContext.getEdgeInfo( md ) );
         }
 
     }
 
-    State getSatisfiedState()
+    boolean hasInstance()
     {
-        return Registered.getInstance();
-    }
-
-    State getActiveState()
-    {
-        return Active.getInstance();
-    }
-    
-    EdgeInfo getEdgeInfo( S implObject, DependencyManager<S, ?> dependencyManager) 
-    {
-        return m_componentContext.getEdgeInfo( dependencyManager );
+        return m_componentContext != null;
     }
 
     <T> void invokeBindMethod( DependencyManager<S, T> dependencyManager, RefPair<T> refPair, int trackingCount )
@@ -345,7 +345,8 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
         if ( componentContext != null )
         {
             final S impl = componentContext.getImplementationObject( false );
-            dependencyManager.invokeBindMethod( impl, refPair, trackingCount );
+            EdgeInfo info = componentContext.getEdgeInfo( dependencyManager );
+            dependencyManager.invokeBindMethod( impl, refPair, trackingCount, info );
         }
     }
 
@@ -355,7 +356,8 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
         if ( componentContext != null )
         {
             final S impl = componentContext.getImplementationObject( false );
-            dependencyManager.invokeUpdatedMethod( impl, refPair, trackingCount );
+            EdgeInfo info = componentContext.getEdgeInfo( dependencyManager );
+            dependencyManager.invokeUpdatedMethod( impl, refPair, trackingCount, info );
         }
     }
 
@@ -365,7 +367,8 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
         if ( componentContext != null )
         {
             final S impl = componentContext.getImplementationObject( false );
-            dependencyManager.invokeUnbindMethod( impl, oldRefPair, trackingCount );
+            EdgeInfo info = componentContext.getEdgeInfo( dependencyManager );
+            dependencyManager.invokeUnbindMethod( impl, oldRefPair, trackingCount, info );
         }
     }
 
@@ -544,7 +547,7 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
 
         // unsatisfied component and non-ignored configuration may change targets
         // to satisfy references
-        if ( getState() == STATE_UNSATISFIED && configuration != null
+        if ( getState() == STATE_UNSATISFIED
                 && !getComponentMetadata().isConfigurationIgnored() )
         {
             log( LogService.LOG_DEBUG, "Attempting to activate unsatisfied component", null );
@@ -700,6 +703,32 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
 
     public S getService( Bundle bundle, ServiceRegistration<S> serviceRegistration )
     {
+        boolean success = getServiceInternal();
+        if ( success )
+        {
+            m_useCount.incrementAndGet();
+            return m_componentContext.getImplementationObject( true );
+        }
+        else
+        {
+            return null;
+        }
+    }
+
+    
+    @Override
+    boolean getServiceInternal()
+    {
+        if (m_circularReferences.get() != null)
+        {
+            log( LogService.LOG_ERROR,  "Circular reference detected, getService returning null", null );
+            dumpThreads();
+            return false;             
+        }
+        m_circularReferences.set( Boolean.TRUE );
+        try
+        {
+            boolean success = true;
             if ( m_componentContext == null )
             {
                 try
@@ -727,7 +756,7 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
                             LogService.LOG_INFO,
                             "Could not obtain all required dependencies, getService returning null",
                             null );
-                    return null;
+                    success = false;
                 }
                 obtainWriteLock( "ImmediateComponentManager.getService.1" );
                 try
@@ -735,12 +764,15 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
                     if ( m_componentContext == null )
                     {
                         //state should be "Registered"
-                        S result = (S) state().getService( this );
-                        if ( result != null )
+                        S result = getService( );
+                        if ( result == null )
                         {
-                            m_useCount.incrementAndGet();
+                            success = false;;
                         }
-                        return result;
+                        else
+                        {
+                            m_activated = true;
+                        }
                     }
                 }
                 finally
@@ -748,8 +780,47 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
                     releaseWriteLock( "ImmediateComponentManager.getService.1" );
                 }
             }
-            m_useCount.incrementAndGet();
-            return m_componentContext.getImplementationObject( true );
+            return success;
+        }
+        finally
+        {
+            //normally this will have been done after object becomes accessible.  This is double-checking.
+            m_circularReferences.remove();
+        }
+    }
+
+    private S getService()
+    {
+        //should be write locked
+        if (!isEnabled())
+        {
+            return null;
+        }
+
+        if ( createComponent() )
+        {
+            return getInstance();
+        }
+
+        // log that the delayed component cannot be created (we don't
+        // know why at this moment; this should already have been logged)
+        log( LogService.LOG_ERROR, "Failed creating the component instance; see log for reason", null );
+
+        // component could not really be created. This may be temporary
+        // so we stay in the registered state but ensure the component
+        // instance is deleted
+        try
+        {
+            deleteComponent( ComponentConstants.DEACTIVATION_REASON_UNSPECIFIED );
+        }
+        catch ( Throwable t )
+        {
+            log( LogService.LOG_DEBUG, "Cannot delete incomplete component instance. Ignoring.", t );
+        }
+
+        // no service can be returned (be prepared for more logging !!)
+        return null;
+
     }
 
     public void ungetService( Bundle bundle, ServiceRegistration<S> serviceRegistration, S o )
@@ -770,7 +841,7 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
                 {
                     if ( m_useCount.get() == 0 )
                     {
-                        state().ungetService( this );
+                        ungetService( );
                         unsetDependenciesCollected();
                     }
                 }
@@ -780,6 +851,11 @@ public class ImmediateComponentManager<S> extends AbstractComponentManager<S> im
                 }
             }
         }
+    }
+
+    void ungetService( )
+    {
+        deleteComponent( ComponentConstants.DEACTIVATION_REASON_UNSPECIFIED );
     }
 
     private boolean keepInstances()

@@ -21,6 +21,7 @@ package org.apache.felix.ipojo.handlers.dependency;
 import java.util.Comparator;
 import java.util.List;
 
+import org.apache.felix.ipojo.util.DependencyModelListener;
 import org.osgi.framework.Filter;
 import org.osgi.framework.ServiceReference;
 
@@ -32,7 +33,7 @@ public class DependencyDescription {
     /**
      * The described dependency.
      */
-    private Dependency m_dependency;
+    private final Dependency m_dependency;
 
     /**
      * Creates a dependency description.
@@ -76,7 +77,7 @@ public class DependencyDescription {
      * @return the list of matching service reference,
      * <code>null</code> if no service reference.
      */
-    public List getServiceReferences() { return m_dependency.getServiceReferencesAsList(); }
+    public List<ServiceReference> getServiceReferences() { return m_dependency.getServiceReferencesAsList(); }
 
     /**
      * Gets the service reference if only one service reference is used.
@@ -97,7 +98,7 @@ public class DependencyDescription {
      * @return the list [service reference] containing the used services,
      * <code>null</code> if no providers are used
      */
-    public List getUsedServices() { return m_dependency.getUsedServiceReferences(); }
+    public List<ServiceReference> getUsedServices() { return m_dependency.getUsedServiceReferences(); }
     
     /**
      * Sets the dependency comparator.
@@ -141,6 +142,33 @@ public class DependencyDescription {
     public String getSpecification() {
         return m_dependency.getSpecification().getName();
     }
-    
 
+    /**
+     * Gets the described dependency.
+     * @return the dependency.
+     */
+    public Dependency getDependency() {
+        return m_dependency;
+    }
+
+    /**
+     * Add the given listener to the dependency model's list of listeners.
+     *
+     * @param listener the {@code DependencyModelListener} object to be added
+     * @throws NullPointerException if {@code listener} is {@code null}
+     */
+    public void addListener(DependencyModelListener listener) {
+        m_dependency.addListener(listener);
+    }
+
+    /**
+     * Remove the given listener from the dependency model's list of listeners.
+     *
+     * @param listener the {@code DependencyModelListener} object to be removed
+     * @throws NullPointerException if {@code listener} is {@code null}
+     * @throws java.util.NoSuchElementException if {@code listener} wasn't present in the dependency model's list of listeners
+     */
+    public void removeListener(DependencyModelListener listener) {
+        m_dependency.removeListener(listener);
+    }
 }
